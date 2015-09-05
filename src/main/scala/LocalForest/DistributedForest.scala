@@ -25,7 +25,8 @@ object DistributedForest {
       .setMaster("local[4]")
     val sc = new SparkContext(conf)
     val trainData = sc.textFile(trainFile,nPartitions).map(createLabeledPoint)
-    val randomForests = train(trainData)
+    printList(trainData.take(5))
+    //val randomForests = train(trainData)
   }
   def createLabeledPoint(line: String) : LabeledPoint = {
     val tokens = line.split(",").map(_.toDouble)

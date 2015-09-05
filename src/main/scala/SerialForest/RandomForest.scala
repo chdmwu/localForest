@@ -7,6 +7,10 @@ class RandomForest private (trees: List[Tree]) extends Serializable {
 }
 
 object RandomForest {
-  def train(input: Array[LabeledPoint]): RandomForest = ???
+  //mapPartitions needs Iterator[T]) ⇒ Iterator[U], so to take and return an Iterator.
+  //Adam: Using Iterators seems pretty annoying,
+  //I guess if you need an array instead of an iterator you need to construct it here
+  //Or maybe if you can find a work around, you can change it back.
+  def train(input: Iterator[LabeledPoint]): Iterator[RandomForest] = ???
 }
 

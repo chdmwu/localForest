@@ -27,5 +27,8 @@ object Node {
       val candidate_vars = RandomSampling.
           sampleWithoutReplacement(numFeatures, treeParameters.mtry, rng)
     }
+
+    // Place-holder for now
+    new LeafNode(rowsHere, trainingData)
   }
 }

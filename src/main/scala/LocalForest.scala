@@ -3,6 +3,6 @@
  */
 object LocalForest {
   def main(args: Array[String]) = {
-    println("Hello, world");
+    println("Hello, test");
   }
 }

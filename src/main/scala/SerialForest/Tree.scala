@@ -4,9 +4,12 @@ import org.apache.spark.mllib.regression.LabeledPoint
 
 class Tree private (head: Node) extends Serializable {
   def predict(testPoint: Vector): Double = ???
-  def getTopPNNs(testPoint: Vector): Array[Long] = ???
+  def getTopPNNs(testPoint: Vector): Vector[Long] = ???
 }
 
 object Tree {
-  def train(input: Array[LabeledPoint]): Tree = ???
+  def train(trainingData: IndexedSeq[LabeledPoint], treeParameters: TreeParameters): Tree = {
+    return new Tree(Node.createNode((0L until trainingData.length).toVector,
+      treeParameters, trainingData))
+  }
 }

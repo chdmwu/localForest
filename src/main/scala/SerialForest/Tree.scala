@@ -1,6 +1,8 @@
 package SerialForest
 
 import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.linalg.Vector
+
 
 
 class Tree private (head: Node) extends Serializable {

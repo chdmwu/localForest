@@ -10,10 +10,10 @@ object RandomSampling {
     var sample: Vector[Int] = Vector.empty
 
     while (m < sampleSize) {
-      if ((n - t) * rng.nextDouble() >= sampleSize - m) {
+      if ((n - t) * rng.nextDouble >= sampleSize - m) {
         t += 1
       } else {
-        sample = m +: sample
+        sample = t +: sample
         t += 1
         m += 1
       }

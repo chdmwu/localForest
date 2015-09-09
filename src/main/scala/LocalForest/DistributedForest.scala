@@ -40,9 +40,10 @@ object DistributedForest {
     return new LabeledPoint(tokens.last, Vectors.dense(tokens.dropRight(1)))
   }
 
-  def train(trainData: RDD[LabeledPoint]) : RDD[RandomForest]= {
-    trainData.mapPartitions[RandomForest](RandomForest.train)
+  def train(trainData: RDD[LabeledPoint]) : RDD[RandomForest] = {
+    trainData.mapPartitions[RandomForest](x => Iterator(RandomForest.train(x.toIndexedSeq)))
   }
+
   def test(testData: Array[Vector], forests: RDD[RandomForest]): Array[Double] = {
     testData.map {item =>
       val pnns = forests.flatMap(_.getPNNs(item))

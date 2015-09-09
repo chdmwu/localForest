@@ -9,6 +9,5 @@ class RandomForest (trees: List[Tree]) extends Serializable {
 }
 
 object RandomForest {
-  def train(input: IndexedSeq[LabeledPoint]): IndexedSeq[RandomForest] = ???
+  def train(input: IndexedSeq[LabeledPoint]): RandomForest = ???
 }
-

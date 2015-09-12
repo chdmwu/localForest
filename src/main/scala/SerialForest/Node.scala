@@ -6,10 +6,10 @@ abstract class Node private[SerialForest] () {
 }
 
 case class InternalNode private[SerialForest] (leftChild: Node, rightChild: Node,
-                                          splitVar: Int, splitPoint: Double) extends Node {}
+                                               splitVar: Int, splitPoint: Double) extends Node {}
 
-case class LeafNode private[SerialForest] (rowsHere: Vector[Int],
-                        trainingData: IndexedSeq[LabeledPoint]) extends Node {
+case class LeafNode private[SerialForest] (rowsHere: IndexedSeq[Int],
+                                           trainingData: IndexedSeq[LabeledPoint]) extends Node {
   def getValue(): Double = {
     rowsHere.foldLeft(0.0)(_ + trainingData(_).label) / rowsHere.length
   }
@@ -34,7 +34,7 @@ object Node {
   }
 
   // This will find the split point and do the splitting into child nodes
-  def createNode(rowsHere: Vector[Int], treeParameters: TreeParameters,
+  def createNode(rowsHere: IndexedSeq[Int], treeParameters: TreeParameters,
                  trainingData: IndexedSeq[LabeledPoint],
                  rng: scala.util.Random): Node = {
 
@@ -51,7 +51,7 @@ object Node {
       // Copy out the y values at this node
       val yValsAtNode = rowsHere.map(trainingData(_).label)
 
-      // Check if there's any variation in the response signal
+      // Check if there is any variation in the response signal
       if (checkIfVariation(yValsAtNode) == false) {
         return LeafNode(rowsHere, trainingData)
       }
@@ -60,20 +60,13 @@ object Node {
       val scoreKeeper: AnovaScoreKeeper = new AnovaScoreKeeper(yValsAtNode)
 
       // Function to get score and split point for a feature
+      // TODO(adam): convert to using some and none for non-feasible variables?
       def getScoreAndSplitPoint(featureIndex: Int): (Double, Double) = {
 
         // Copy out the values of the column in this node
         val predictorValues = rowsHere.map(trainingData(_).features(featureIndex))
-
-        // Check if there is any variation in this predictor
-        if (checkIfVariation(predictorValues) == false) {
-          return (0.0, 0.0)
-        }
-
         // Get the indices of the sorted set of predictors
-        val predictorIndices = (predictorValues.indices).sortWith{
-          (index1, index2) => predictorValues(index1) < predictorValues(index2)
-        }
+        val predictorIndices = predictorValues.indices.sortBy(predictorValues(_))
 
         var minScore: Double = 0.0
 
@@ -81,26 +74,42 @@ object Node {
         scoreKeeper.reset()
 
         // TODO(adam) deal with ties
-        predictorIndices.foldLeft((0.0, 0.0))(
-          (bestScoreInfo, index) => {
-            bestScoreInfo match {
-              case (bestScore, bestSplit) =>
-                scoreKeeper.moveLeft(yValsAtNode(index))
-                val currentScore = scoreKeeper.getCurrentScore()
-                if (currentScore < bestScore) {
-                  (currentScore, predictorValues(index))
-                } else {
-                  (bestScore, bestSplit)
-                }
+        var bestScore: Double = 0
+        var bestSplit: Double = 0
+        var foundPredictorVariation: Boolean = false
+
+        // Handle the first iteration
+        scoreKeeper.moveLeft(yValsAtNode(predictorIndices.head))
+        bestScore = scoreKeeper.getCurrentScore()
+        var lastPredictorValue: Double = predictorValues(predictorIndices.head)
+
+
+        predictorIndices.tail.foreach(index => {
+          scoreKeeper.moveLeft(yValsAtNode(index))
+          val newPredictorValue = predictorValues(index)
+          if (newPredictorValue != lastPredictorValue) {
+            foundPredictorVariation = true
+            val currentScore = scoreKeeper.getCurrentScore()
+            if (currentScore < bestScore) {
+              bestScore = currentScore
+              bestSplit = newPredictorValue
             }
-          })
+            lastPredictorValue = newPredictorValue
+          }
+        })
+
+        if (!foundPredictorVariation) {
+          (0.0, 0.0)
+        } else {
+          (bestScore, bestSplit)
+        }
       }
 
       val scoresAndSplits = candidateVars.map(getScoreAndSplitPoint(_))
 
       // TODO(adam) deal with ties and using midpoint as split
       val (bestScore, bestSplit, bestVariable) =
-        (candidateVars.indices).foldLeft((0.0, 0.0, -1))(
+        (candidateVars.indices).view.foldLeft((0.0, 0.0, -1))(
           (bestScoreInfo, index) => {
             bestScoreInfo match {
               case (bestScore, bestSplit, bestPredictorIndex) =>
@@ -122,7 +131,9 @@ object Node {
         trainingData(_).features(bestVariable) <= bestSplit)
 
       if (leftIndices.length == 0 || rightIndices.length == 0) {
-        System.out.println(leftIndices.length.toString + " " + rightIndices.length.toString)
+        if (rowsHere.length > 5000) {
+          System.out.println(leftIndices.length.toString + " " + rightIndices.length.toString)
+        }
         return LeafNode(rowsHere, trainingData)
       }
 

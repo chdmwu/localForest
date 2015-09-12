@@ -4,7 +4,7 @@ import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.linalg.{Vector => mllibVector}
 
 class Tree private (head: Node) extends Serializable {
-  def predict(testPoint: mllibVector): Double = {
+  private def getTerminalNode(testPoint: mllibVector): LeafNode = {
     var currentNode: Node = head
     while (true) {
       currentNode match {
@@ -16,19 +16,27 @@ class Tree private (head: Node) extends Serializable {
           }
         }
         case leaf: LeafNode => {
-          return leaf.getValue()
+          return leaf
         }
       }
     }
-    0.0
+    throw new IllegalStateException("Did not find leaf node; error in tree construction")
   }
 
-  def getTopPNNs(testPoint: mllibVector): Vector[Long] = ???
+  def predict(testPoint: mllibVector): Double = {
+    getTerminalNode(testPoint).getValue()
+  }
+
+  def getPNNIndices(testPoint: mllibVector): IndexedSeq[Int] = {
+    getTerminalNode(testPoint).rowsHere
+  }
 }
 
 object Tree {
-  def train(trainingData: IndexedSeq[LabeledPoint], treeParameters: TreeParameters): Tree = {
-    return new Tree(Node.createNode((0 until trainingData.length).toVector,
-      treeParameters, trainingData, new scala.util.Random(treeParameters.randomSeed)))
+  def train(indices: IndexedSeq[Int],
+            trainingData: IndexedSeq[LabeledPoint], treeParameters: TreeParameters,
+            randomSeed: Long): Tree = {
+    new Tree(Node.createNode(indices,
+      treeParameters, trainingData, new scala.util.Random(randomSeed)))
   }
 }

@@ -1,4 +1,4 @@
-package Simulations
+package edu.berkeley.statistics.Simulations
 
 import scala.math._
 /**

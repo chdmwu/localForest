@@ -1,13 +1,12 @@
-package DistributedForest
+package edu.berkeley.statistics.DistributedForest
 
-import SerialForest.{TreeParameters, RandomForestParameters, RandomForest}
-import breeze.linalg.{DenseVector, DenseMatrix}
-import org.apache.spark.mllib.regression.{LinearRegressionWithSGD, LabeledPoint}
+import SerialForest.TreeParameters
+import edu.berkeley.statistics.LocalModels.WeightedLinearRegression
+import edu.berkeley.statistics.SerialForest.{TreeParameters, RandomForestParameters, RandomForest}
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.mllib.linalg.{Vector => mllibVector, Vectors}
+import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.rdd.RDD
-import org.apache.spark.SparkContext
-import org.apache.spark.SparkConf
-import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.linalg.{Vector => mllibVector}
 
 
 /**

@@ -1,15 +1,13 @@
-package Simulations.SimulationExecutors
+package edu.berkeley.statistics.Simulations.SimulationsExecutors
 
-import SerialForest.{RandomForest, RandomForestParameters, Tree, TreeParameters}
-import Simulations.DataGenerators.Friedman1
-import Simulations.EvaluationMetrics
-
-import scala.math.{pow, sqrt}
+import edu.berkeley.statistics.SerialForest.{RandomForest, RandomForestParameters, Tree, TreeParameters}
+import edu.berkeley.statistics.Simulations.DataGenerators.Friedman1
+import edu.berkeley.statistics.Simulations.EvaluationMetrics
 
 object ExecuteSerialSimulation {
   def main(args: Array[String]) = {
 
-    val nTrain: Int = 10000
+    val nTrain: Int = 50000
     val nTest: Int = 1000
 
     val (trainingData, testData) = "Friedman1" match {

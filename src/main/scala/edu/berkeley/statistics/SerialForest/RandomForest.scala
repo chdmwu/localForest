@@ -1,4 +1,4 @@
-package SerialForest
+package edu.berkeley.statistics.SerialForest
 
 import org.apache.spark.mllib.linalg.{Vector => mllibVector}
 import org.apache.spark.mllib.regression.LabeledPoint

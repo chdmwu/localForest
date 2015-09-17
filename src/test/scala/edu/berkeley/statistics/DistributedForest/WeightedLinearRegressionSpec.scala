@@ -1,8 +1,9 @@
-package DistributedForest
+package edu.berkeley.statistics.DistributedForest
 
-import breeze.linalg.{DenseVector, DenseMatrix}
-import org.apache.spark.mllib.regression.LabeledPoint
+import breeze.linalg.{DenseMatrix, DenseVector}
+import edu.berkeley.statistics.LocalModels.WeightedLinearRegression
 import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.regression.LabeledPoint
 import org.scalatest._
 
 class WeightedLinearRegressionSpec extends FlatSpec {

@@ -1,4 +1,4 @@
-package SerialForest
+package edu.berkeley.statistics.SerialForest
 
 import org.apache.spark.mllib.regression.LabeledPoint
 
@@ -66,7 +66,10 @@ object Node {
         // Copy out the values of the column in this node
         val predictorValues = rowsHere.map(trainingData(_).features(featureIndex))
         // Get the indices of the sorted set of predictors
-        val predictorIndices = predictorValues.indices.sortBy(predictorValues(_))
+        // val predictorIndices = predictorValues.indices.sortBy(predictorValues(_))
+        val predictorIndices = predictorValues.indices.toArray
+        scala.util.Sorting.quickSort[Int](predictorIndices)(
+          Ordering.by[Int, Double](predictorValues(_)))
 
         var minScore: Double = 0.0
 

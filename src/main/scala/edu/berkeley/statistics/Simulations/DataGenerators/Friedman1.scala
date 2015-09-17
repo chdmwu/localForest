@@ -1,11 +1,11 @@
-package Simulations.DataGenerators
+package edu.berkeley.statistics.Simulations.DataGenerators
 
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
 
 import scala.math.{Pi, pow, sin}
 
-trait SimulationDataGenerator {
+trait SimulationDataGenerator extends Serializable {
   def generateData(numObservations: Int, noiseSd: Double,
                    rng: scala.util.Random): IndexedSeq[LabeledPoint]
 }

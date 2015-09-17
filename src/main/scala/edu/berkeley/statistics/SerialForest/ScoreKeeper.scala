@@ -1,4 +1,4 @@
-package SerialForest
+package edu.berkeley.statistics.SerialForest
 
 import scala.math.pow
 

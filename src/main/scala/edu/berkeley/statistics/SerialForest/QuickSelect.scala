@@ -1,4 +1,4 @@
-package SerialForest
+package edu.berkeley.statistics.SerialForest
 
 /**
  * Created by Adam on 9/11/15.

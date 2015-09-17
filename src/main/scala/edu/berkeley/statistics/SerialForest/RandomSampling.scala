@@ -1,4 +1,4 @@
-package SerialForest
+package edu.berkeley.statistics.SerialForest
 
 object RandomSampling {
   def sampleWithoutReplacement(n: Int, sampleSize: Int,

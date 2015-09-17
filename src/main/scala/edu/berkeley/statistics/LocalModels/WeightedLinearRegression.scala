@@ -1,6 +1,6 @@
-package DistributedForest
+package edu.berkeley.statistics.LocalModels
 
-import breeze.linalg.{DenseVector, DenseMatrix}
+import breeze.linalg.{DenseMatrix, DenseVector}
 import org.apache.spark.mllib.regression.LabeledPoint
 
 /**

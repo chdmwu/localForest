@@ -1,6 +1,5 @@
 package edu.berkeley.statistics.DistributedForest
 
-import SerialForest.TreeParameters
 import edu.berkeley.statistics.LocalModels.WeightedLinearRegression
 import edu.berkeley.statistics.SerialForest.{TreeParameters, RandomForestParameters, RandomForest}
 import org.apache.spark.{SparkConf, SparkContext}

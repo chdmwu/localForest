@@ -20,26 +20,26 @@ object ExecuteDistributedSimulation {
 
     // Parse the command line parameters
     val simulationName: String = args(0)
-    val numPartitions: Int = try { args(1).toInt } catch { case _ => {
+    val numPartitions: Int = try { args(1).toInt } catch { case _ : Throwable => {
       System.err.println("Unable to parse num partitions: " + args(1) + " is not an integer")
       printUsageAndQuit()
       0
     }}
     // For large simulations, may have to edit /usr/local/etc/sbtopts on MacOS if using sbt
     // or add --executor-memory XXG commandline option if using spark-submit
-    val numTrainingPointsPerPartition: Int =  try { args(2).toInt } catch { case _ => {
+    val numTrainingPointsPerPartition: Int =  try { args(2).toInt } catch { case _ : Throwable => {
       System.err.println("Unable to parse num training points per partition: " + args(2) +
           " is not an integer")
       printUsageAndQuit()
       0
     }}
-    val numPNNsPerPartition: Int = try { args(3).toInt } catch { case _ => {
+    val numPNNsPerPartition: Int = try { args(3).toInt } catch { case _ : Throwable => {
       System.err.println("Unable to parse num PNNs per partition: " + args(3) +
           " is not an integer")
       printUsageAndQuit()
       0
     }}
-    val numTestPoints: Int = try { args(4).toInt } catch { case _ => {
+    val numTestPoints: Int = try { args(4).toInt } catch { case _ : Throwable => {
       System.err.println("Unable to parse num test points: " + args(4) +
           " is not an integer")
       printUsageAndQuit()

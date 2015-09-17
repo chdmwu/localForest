@@ -11,4 +11,5 @@ libraryDependencies ++= Seq(
 
 libraryDependencies += "org.scalatest" % "scalatest_2.10" % "2.2.4" % "test"
 
-mainClass in (Compile, run) := Some("Simulations.SimulationExecutors.ExecuteDistributedSimulation")
+mainClass in (Compile, run) := Some(
+  "edu.berkeley.statistics.Simulations.SimulationsExecutors.ExecuteDistributedSimulation")

@@ -3,11 +3,8 @@ package edu.berkeley.statistics.LocalModels
 import breeze.linalg.{DenseMatrix, DenseVector}
 import org.apache.spark.mllib.regression.LabeledPoint
 
-/**
- * Created by Adam on 9/11/15.
- */
 object WeightedLinearRegression {
-  private [DistributedForest] def
+  private [LocalModels] def
   getCovarianceMatrix(pnnsAndWeights: Array[(LabeledPoint, Double)]): DenseMatrix[Double] = {
     val numPredictors = pnnsAndWeights(0)._1.features.size
     def covarianceFoldFn(previousMatrix: DenseMatrix[Double],
@@ -25,7 +22,7 @@ object WeightedLinearRegression {
       DenseMatrix.zeros[Double](numPredictors + 1, numPredictors + 1))(covarianceFoldFn)
   }
 
-  private [DistributedForest] def
+  private [LocalModels] def
   getCrossProductVector(pnnsAndWeights: Array[(LabeledPoint, Double)]): DenseVector[Double] = {
     val numPredictors = pnnsAndWeights(0)._1.features.size
     def crossProdFoldFn(previousVector: DenseVector[Double],

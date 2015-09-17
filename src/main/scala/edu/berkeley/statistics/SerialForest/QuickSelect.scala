@@ -1,8 +1,5 @@
 package edu.berkeley.statistics.SerialForest
 
-/**
- * Created by Adam on 9/11/15.
- */
 object QuickSelect {
 
   def apply[A <% Ordered[A]](sequence: Array[A], n: Int, rng: scala.util.Random): A = {

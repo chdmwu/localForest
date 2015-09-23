@@ -1,6 +1,6 @@
 package edu.berkeley.statistics.DistributedForest
 
-import edu.berkeley.statistics.LocalModels.WeightedLinearRegression
+import edu.berkeley.statistics.LocalModels.{WeightedLocalModel, WeightedLinearRegression}
 import edu.berkeley.statistics.SerialForest.{TreeParameters, RandomForestParameters, RandomForest}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.mllib.linalg.{Vector => mllibVector, Vectors}
@@ -40,29 +40,23 @@ object DistributedForest {
     return new LabeledPoint(tokens.last, Vectors.dense(tokens.dropRight(1)))
   }
 
-  // TODO(adam): consider making this RDD[IndexedSeq[LabeledPoint]] to avoid copying
+  // TODO(adam): consider making this RDD[IndexedSeq[LabeledPoint]]
   // TODO(adam): make it so you can specify size of resample
-  def train(trainData: RDD[LabeledPoint]): RDD[RandomForest] = {
+  // TODO(adam): make RF parameters tunable
+  def train(trainData: RDD[LabeledPoint],
+               parameters: RandomForestParameters): RDD[RandomForest] = {
     trainData.mapPartitions[RandomForest](x => Iterator(RandomForest.train(x.toIndexedSeq,
-      RandomForestParameters(100, true, TreeParameters(3, 10)))))
+      parameters)))
   }
 
   def predictWithLocalModel(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
-                            numPNNsPerPartition: Int): IndexedSeq[Double] = {
+                            numPNNsPerPartition: Int,
+                               localModel: WeightedLocalModel): IndexedSeq[Double] = {
     testData.map(testPoint => {
-      val pnnsAndWeights = forests.flatMap((forest: RandomForest) =>
-      {
-        val rawPNNsAndWeights = forest.getTopPNNsAndWeights(testPoint, numPNNsPerPartition)
-        rawPNNsAndWeights.map{ case (trainingPoint: LabeledPoint, weight: Double) => {
-          val rawPNN = trainingPoint.features.toArray
-          // Center the PNN on the test point
-          val shiftedPNN = rawPNN.indices.map(idx => rawPNN(idx) - testPoint(idx))
-          (new LabeledPoint(trainingPoint.label, Vectors.dense(shiftedPNN.toArray)), weight)
-        }
-        }
-      }).collect()
+      val pnnsAndWeights = forests.flatMap(_.getTopPNNsAndWeights(testPoint, numPNNsPerPartition))
+          .collect()
 
-      WeightedLinearRegression.betaHat(pnnsAndWeights)(0)
+      localModel.fitAndPredict(pnnsAndWeights, testPoint)
     })
   }
 

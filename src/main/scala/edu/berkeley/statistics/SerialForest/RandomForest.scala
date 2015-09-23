@@ -10,7 +10,8 @@ class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) ex
 
     trees.map(tree => {
       val indices = tree.getPNNIndices(testPoint)
-      indices.foreach(idx => indexCounts.update(idx, indexCounts.get(idx).getOrElse(0.0) + 1.0))
+      indices.foreach(idx => indexCounts.update(idx, indexCounts.get(idx).getOrElse(0.0) +
+          1.0 / indices.size))
     })
 
     val totalWeight = indexCounts.values.sum

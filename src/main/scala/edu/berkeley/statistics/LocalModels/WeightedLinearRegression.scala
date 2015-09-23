@@ -1,10 +1,11 @@
 package edu.berkeley.statistics.LocalModels
 
 import breeze.linalg.{DenseMatrix, DenseVector}
+import org.apache.spark.mllib.linalg.{Vector => mllibVector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
 
-object WeightedLinearRegression {
-  private [LocalModels] def
+object WeightedLinearRegression extends WeightedLocalModel {
+  private[LocalModels] def
   getCovarianceMatrix(pnnsAndWeights: Array[(LabeledPoint, Double)]): DenseMatrix[Double] = {
     val numPredictors = pnnsAndWeights(0)._1.features.size
     def covarianceFoldFn(previousMatrix: DenseMatrix[Double],
@@ -22,7 +23,7 @@ object WeightedLinearRegression {
       DenseMatrix.zeros[Double](numPredictors + 1, numPredictors + 1))(covarianceFoldFn)
   }
 
-  private [LocalModels] def
+  private[LocalModels] def
   getCrossProductVector(pnnsAndWeights: Array[(LabeledPoint, Double)]): DenseVector[Double] = {
     val numPredictors = pnnsAndWeights(0)._1.features.size
     def crossProdFoldFn(previousVector: DenseVector[Double],
@@ -46,4 +47,10 @@ object WeightedLinearRegression {
     covarianceMatrix \ crossProductVector
   }
 
+  def fitAndPredict(trainingPointsAndWeights: Array[(LabeledPoint, Double)],
+                    testPoint: mllibVector): Double = {
+    val centeredTrainingData = centerTrainingData(trainingPointsAndWeights, testPoint)
+
+    betaHat(centeredTrainingData)(0)
+  }
 }

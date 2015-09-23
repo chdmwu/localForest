@@ -1,7 +1,7 @@
 package edu.berkeley.statistics.Simulations.SimulationsExecutors
 
 import edu.berkeley.statistics.SerialForest.{RandomForest, RandomForestParameters, Tree, TreeParameters}
-import edu.berkeley.statistics.Simulations.DataGenerators.Friedman1
+import edu.berkeley.statistics.Simulations.DataGenerators.Friedman1Generator
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
 
 object ExecuteSerialSimulation {
@@ -12,8 +12,8 @@ object ExecuteSerialSimulation {
 
     val (trainingData, testData) = "Friedman1" match {
       case "Friedman1" => {
-        (Friedman1.generateData(nTrain, 3.0, scala.util.Random),
-            Friedman1.generateData(nTest, 0.0, scala.util.Random))
+        (Friedman1Generator.generateData(nTrain, 3.0, scala.util.Random),
+            Friedman1Generator.generateData(nTest, 0.0, scala.util.Random))
       }
     }
 

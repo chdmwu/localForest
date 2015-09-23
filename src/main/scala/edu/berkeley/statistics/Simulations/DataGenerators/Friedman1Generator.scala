@@ -5,12 +5,7 @@ import org.apache.spark.mllib.regression.LabeledPoint
 
 import scala.math.{Pi, pow, sin}
 
-trait SimulationDataGenerator extends Serializable {
-  def generateData(numObservations: Int, noiseSd: Double,
-                   rng: scala.util.Random): IndexedSeq[LabeledPoint]
-}
-
-object Friedman1 extends SimulationDataGenerator {
+object Friedman1Generator extends SimulationDataGenerator {
   def generateData(numObservations: Int, noiseSd: Double,
                    rng: scala.util.Random): IndexedSeq[LabeledPoint] = {
     def getSingleObservation: LabeledPoint = {

@@ -29,6 +29,10 @@ class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) ex
       case (index: Int, weight: Double) => (trainingData(index), weight)}
   }
 
+  def getTopPNNsAndWeightsBatch(testPoints: IndexedSeq[mllibVector], numPNNs: Int): IndexedSeq[IndexedSeq[(LabeledPoint, Double)]] = {
+    testPoints.map(getTopPNNsAndWeights(_, numPNNs))
+  }
+
   def predict(testPoint: mllibVector): Double = {
     trees.map(_.predict(testPoint)).sum / trees.length
   }

@@ -60,6 +60,22 @@ object DistributedForest {
     })
   }
 
+  def PredictWithLocalModelBatch(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
+                            numPNNsPerPartition: Int,
+                            localModel: WeightedLocalModel,
+                            batchSize: Int): IndexedSeq[Double] = {
+    val batchData = testData.grouped(batchSize).toIndexedSeq //group into batches
+    batchData.map(
+      batch => {
+      val pnnsAndWeights = forests.flatMap(_.getTopPNNsAndWeightsBatch(batch, numPNNsPerPartition))
+        .collect() //get batch pnns and weights
+
+       pnnsAndWeights.zip(batch).map{ //zip pnn/weight info with corresponding testpoint
+         case (pnnAndWeight,testPoint) => localModel.fitAndPredict(pnnAndWeight.toArray, testPoint)
+       }//fit a model and predict  for each pnn/weight and testpoint
+    }).flatten //flatten batch results
+  }
+
   def predictWithNaiveAverage(testData: IndexedSeq[mllibVector],
                               forests: RDD[RandomForest]): IndexedSeq[Double] = {
     testData.map(testPoint => {

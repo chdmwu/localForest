@@ -29,8 +29,8 @@ class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) ex
       case (index: Int, weight: Double) => (trainingData(index), weight)}
   }
 
-  def getTopPNNsAndWeightsBatch(testPoints: IndexedSeq[mllibVector], numPNNs: Int): IndexedSeq[IndexedSeq[(LabeledPoint, Double)]] = {
-    testPoints.map(getTopPNNsAndWeights(_, numPNNs))
+  def getTopPNNsAndWeightsBatch(testPoints: IndexedSeq[mllibVector], numPNNs: Int): List[IndexedSeq[(LabeledPoint, Double)]] = {
+    testPoints.map(getTopPNNsAndWeights(_, numPNNs)).toList
   }
 
   def predict(testPoint: mllibVector): Double = {

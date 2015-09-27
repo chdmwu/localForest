@@ -60,21 +60,39 @@ object DistributedForest {
     })
   }
 
-  def PredictWithLocalModelBatch(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
+  def predictWithLocalModelBatch(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
                             numPNNsPerPartition: Int,
                             localModel: WeightedLocalModel,
                             batchSize: Int): IndexedSeq[Double] = {
+    var batchData = testData.grouped(batchSize).toIndexedSeq //group into batches
+    val predictions = batchData.flatMap(
+      batch => {
+        val temp = forests.map(_.getTopPNNsAndWeightsBatch(batch, numPNNsPerPartition))
+          .collect().toList
+        val corrected = temp.transpose.map(_.flatten).zip(batch)
+        corrected.map{case (pnnAndWeight,testPoint) => localModel.fitAndPredict(pnnAndWeight.toArray, testPoint)}
+      }
+    )
+    predictions
+  }
+
+/**
+  def predictWithLocalModelBatch2(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
+                                 numPNNsPerPartition: Int,
+                                 localModel: WeightedLocalModel,
+                                 batchSize: Int): IndexedSeq[Double] = {
     val batchData = testData.grouped(batchSize).toIndexedSeq //group into batches
     batchData.map(
       batch => {
-      val pnnsAndWeights = forests.flatMap(_.getTopPNNsAndWeightsBatch(batch, numPNNsPerPartition))
-        .collect() //get batch pnns and weights
+        val pnnsAndWeights = forests.flatMap(_.getTopPNNsAndWeightsBatch(batch, numPNNsPerPartition))
+          .collect() //get batch pnns and weights
 
-       pnnsAndWeights.zip(batch).map{ //zip pnn/weight info with corresponding testpoint
-         case (pnnAndWeight,testPoint) => localModel.fitAndPredict(pnnAndWeight.toArray, testPoint)
-       }//fit a model and predict  for each pnn/weight and testpoint
-    }).flatten //flatten batch results
+        pnnsAndWeights.zip(batch).map{ //zip pnn/weight info with corresponding testpoint
+          case (pnnAndWeight,testPoint) => localModel.fitAndPredict(pnnAndWeight.toArray, testPoint)
+        }//fit a model and predict  for each pnn/weight and testpoint
+      }).flatten //flatten batch results
   }
+*/
 
   def predictWithNaiveAverage(testData: IndexedSeq[mllibVector],
                               forests: RDD[RandomForest]): IndexedSeq[Double] = {

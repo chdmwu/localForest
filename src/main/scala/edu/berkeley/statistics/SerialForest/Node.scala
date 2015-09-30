@@ -5,6 +5,7 @@ import org.apache.spark.mllib.regression.LabeledPoint
 abstract class Node private[SerialForest] () {
 }
 
+
 case class InternalNode private[SerialForest] (leftChild: Node, rightChild: Node,
                                                splitVar: Int, splitPoint: Double) extends Node {}
 
@@ -38,21 +39,22 @@ object Node {
                  trainingData: IndexedSeq[LabeledPoint],
                  rng: scala.util.Random): Node = {
 
+
     if (rowsHere.length <= treeParameters.nodeSize) {
       LeafNode(rowsHere, trainingData)
     } else {
+
       // Sample a set of variables to split on
       val numFeatures: Int = trainingData(0).features.size
       val candidateVars = RandomSampling.
           sampleWithoutReplacement(numFeatures, treeParameters.mtry, rng)
-
-      var minScore: Double = 0
 
       // Copy out the y values at this node
       val yValsAtNode = rowsHere.map(trainingData(_).label)
 
       // Check if there is any variation in the response signal
       if (checkIfVariation(yValsAtNode) == false) {
+
         return LeafNode(rowsHere, trainingData)
       }
 
@@ -67,9 +69,14 @@ object Node {
         val predictorValues = rowsHere.map(trainingData(_).features(featureIndex))
         // Get the indices of the sorted set of predictors
         // val predictorIndices = predictorValues.indices.sortBy(predictorValues(_))
+
+
         val predictorIndices = predictorValues.indices.toArray
-        scala.util.Sorting.quickSort[Int](predictorIndices)(
+        util.Sorting.quickSort[Int](predictorIndices)(
           Ordering.by[Int, Double](predictorValues(_)))
+
+        //        java.util.Arrays.sort(predictorIndices map java.lang.Integer.valueOf,
+        //          Ordering.by[java.lang.Integer, Double](predictorValues(_)))
 
         var minScore: Double = 0.0
 
@@ -101,6 +108,7 @@ object Node {
           }
         })
 
+
         if (!foundPredictorVariation) {
           (0.0, 0.0)
         } else {
@@ -108,7 +116,9 @@ object Node {
         }
       }
 
+
       val scoresAndSplits = candidateVars.map(getScoreAndSplitPoint(_))
+
 
       // TODO(adam) deal with ties and using midpoint as split
       val (bestScore, bestSplit, bestVariable) =

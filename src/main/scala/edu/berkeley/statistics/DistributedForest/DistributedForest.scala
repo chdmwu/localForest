@@ -1,11 +1,11 @@
 package edu.berkeley.statistics.DistributedForest
 
-import edu.berkeley.statistics.LocalModels.{WeightedLocalModel, WeightedLinearRegression}
-import edu.berkeley.statistics.SerialForest.{TreeParameters, RandomForestParameters, RandomForest}
-import org.apache.spark.{SparkConf, SparkContext}
+import edu.berkeley.statistics.LocalModels.WeightedLinearRegression
+import edu.berkeley.statistics.SerialForest.{RandomForest, RandomForestParameters}
 import org.apache.spark.mllib.linalg.{Vector => mllibVector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
 
 
 /**
@@ -44,62 +44,39 @@ object DistributedForest {
   // TODO(adam): make it so you can specify size of resample
   // TODO(adam): make RF parameters tunable
   def train(trainData: RDD[LabeledPoint],
-               parameters: RandomForestParameters): RDD[RandomForest] = {
+            parameters: RandomForestParameters): RDD[RandomForest] = {
     trainData.mapPartitions[RandomForest](x => Iterator(RandomForest.train(x.toIndexedSeq,
       parameters)))
   }
 
-  def predictWithLocalModel(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
-                            numPNNsPerPartition: Int,
-                               localModel: WeightedLocalModel): IndexedSeq[Double] = {
-    testData.map(testPoint => {
-      val pnnsAndWeights = forests.flatMap(_.getTopPNNsAndWeights(testPoint, numPNNsPerPartition))
-          .collect()
-
-      localModel.fitAndPredict(pnnsAndWeights, testPoint)
+  def predictWithLocalRegressionBatch(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
+                                      numPNNsPerPartition: Int,
+                                      batchSize: Int): IndexedSeq[Double] = {
+    var batchData = testData.grouped(batchSize).toIndexedSeq //group into batches
+    batchData.flatMap((batch: IndexedSeq[mllibVector]) => {
+      val covMatsForests = forests.map((f: RandomForest) => {
+        val pnnsAndWeights = batch.map(f.getTopPNNsAndWeights(_, numPNNsPerPartition))
+        val pnnsWeightsAndTestPoint = pnnsAndWeights.zip(batch)
+        pnnsWeightsAndTestPoint.map(x =>
+          WeightedLinearRegression.getCovarianceMatrix(x._1, x._2))
+      }).collect
+      batch.indices.map((i: Int) => {
+        val (partitionCovMats, partitionCrossCovs) = covMatsForests.map(_(i)).unzip
+        WeightedLinearRegression.getBetaHat(partitionCovMats, partitionCrossCovs)(0)
+      })
     })
   }
 
-  def predictWithLocalModelBatch(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
-                            numPNNsPerPartition: Int,
-                            localModel: WeightedLocalModel,
-                            batchSize: Int): IndexedSeq[Double] = {
-    var batchData = testData.grouped(batchSize).toIndexedSeq //group into batches
-    val predictions = batchData.flatMap(
-      batch => {
-        val temp = forests.map(_.getTopPNNsAndWeightsBatch(batch, numPNNsPerPartition))
-          .collect().toList
-        val corrected = temp.transpose.map(_.flatten).zip(batch)
-        corrected.map{case (pnnAndWeight,testPoint) => localModel.fitAndPredict(pnnAndWeight.toArray, testPoint)}
-      }
-    )
-    predictions
-  }
-
-/**
-  def predictWithLocalModelBatch2(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
-                                 numPNNsPerPartition: Int,
-                                 localModel: WeightedLocalModel,
-                                 batchSize: Int): IndexedSeq[Double] = {
-    val batchData = testData.grouped(batchSize).toIndexedSeq //group into batches
-    batchData.map(
-      batch => {
-        val pnnsAndWeights = forests.flatMap(_.getTopPNNsAndWeightsBatch(batch, numPNNsPerPartition))
-          .collect() //get batch pnns and weights
-
-        pnnsAndWeights.zip(batch).map{ //zip pnn/weight info with corresponding testpoint
-          case (pnnAndWeight,testPoint) => localModel.fitAndPredict(pnnAndWeight.toArray, testPoint)
-        }//fit a model and predict  for each pnn/weight and testpoint
-      }).flatten //flatten batch results
-  }
-*/
-
-  def predictWithNaiveAverage(testData: IndexedSeq[mllibVector],
-                              forests: RDD[RandomForest]): IndexedSeq[Double] = {
-    testData.map(testPoint => {
-      val allPredictions = forests.map(forest =>
-        forest.predict(testPoint)).collect()
-      allPredictions.sum / allPredictions.length
+  def predictWithNaiveAverageBatch(testData: IndexedSeq[mllibVector],
+                                   forests: RDD[RandomForest], batchSize: Int): IndexedSeq[Double] = {
+    var batchData = testData.grouped(batchSize).toIndexedSeq
+    batchData.flatMap(batch => {
+      val forestPreds = forests.map(f => {
+        batch.map(f.predict(_))
+      }).collect
+      batch.indices.map(i => {
+        forestPreds.map(_(i)).sum / forestPreds.size
+      })
     })
   }
 }

@@ -1,7 +1,6 @@
 package edu.berkeley.statistics.Simulations.SimulationsExecutors
 
 import edu.berkeley.statistics.DistributedForest.DistributedForest
-import edu.berkeley.statistics.LocalModels.{WeightedAverage, WeightedLinearRegression}
 import edu.berkeley.statistics.SerialForest.{RandomForestParameters, TreeParameters}
 import edu.berkeley.statistics.Simulations.DataGenerators.{FourierBasisGaussianProcessFunction, FourierBasisGaussianProcessGenerator, Friedman1Generator}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
@@ -12,37 +11,55 @@ import scala.math.floor
 object ExecuteDistributedSimulation {
   def main(args: Array[String]) = {
 
+    var argIndex = 0
+    def incrementArgIndex = {
+      val old = argIndex
+      argIndex += 1
+      old
+    }
+
     val conf = new SparkConf().setAppName("DistributedForest").setMaster("local[6]")
 
     val sc = new SparkContext(conf)
 
     // Parse the command line parameters
-    val simulationName: String = args(0)
-    val numPartitions: Int = try { args(1).toInt } catch { case _ : Throwable => {
-      System.err.println("Unable to parse num partitions: " + args(1) + " is not an integer")
+    val simulationName: String = args(incrementArgIndex)
+    val numPartitions: Int = try { args(incrementArgIndex).toInt } catch { case _ : Throwable => {
+      System.err.println("Unable to parse num partitions: " + args(argIndex) + " is not an integer")
       printUsageAndQuit()
       0
     }}
+
     // For large simulations, may have to edit /usr/local/etc/sbtopts on MacOS if using sbt
     // or add --executor-memory XXG commandline option if using spark-submit
-    val numTrainingPointsPerPartition: Int =  try { args(2).toInt } catch { case _ : Throwable => {
-      System.err.println("Unable to parse num training points per partition: " + args(2) +
-          " is not an integer")
-      printUsageAndQuit()
-      0
-    }}
-    val numPNNsPerPartition: Int = try { args(3).toInt } catch { case _ : Throwable => {
-      System.err.println("Unable to parse num PNNs per partition: " + args(3) +
-          " is not an integer")
-      printUsageAndQuit()
-      0
-    }}
-    val numTestPoints: Int = try { args(4).toInt } catch { case _ : Throwable => {
-      System.err.println("Unable to parse num test points: " + args(4) +
-          " is not an integer")
-      printUsageAndQuit()
-      0
-    }}
+    val numTrainingPointsPerPartition: Int =  try { args(incrementArgIndex).toInt } catch {
+      case _ : Throwable => {
+        System.err.println("Unable to parse num training points per partition: " + args(argIndex) +
+            " is not an integer")
+        printUsageAndQuit()
+        0
+      }}
+    val numPNNsPerPartition: Int = try { args(incrementArgIndex).toInt } catch {
+      case _ : Throwable => {
+        System.err.println("Unable to parse num PNNs per partition: " + args(argIndex) +
+            " is not an integer")
+        printUsageAndQuit()
+        0
+      }}
+    val numTestPoints: Int = try { args(incrementArgIndex).toInt } catch {
+      case _ : Throwable => {
+        System.err.println("Unable to parse num test points: " + args(argIndex) +
+            " is not an integer")
+        printUsageAndQuit()
+        0
+      }}
+    val batchSize: Int = try { args(incrementArgIndex).toInt } catch {
+      case _ : Throwable => {
+        System.err.println("Unable to parse batch size: " + args(argIndex) +
+            " is not an integer")
+        printUsageAndQuit()
+        0
+      }}
 
     System.out.println("Generating the data")
     // Generate the random seeds for simulating data
@@ -56,9 +73,11 @@ object ExecuteDistributedSimulation {
       case "Friedman1" => (Friedman1Generator,
           RandomForestParameters(100, true, TreeParameters(3, 10)))
       case "GaussianProcess" => {
-        val numActiveDimensions = 20
-        val numInactiveDimensions = 20
-        val numBasisFunctions = if (args.length > 4) args(5).toInt else numActiveDimensions * 500
+        val numActiveDimensions = args(incrementArgIndex).toInt
+        val numInactiveDimensions = args(incrementArgIndex).toInt
+        val numBasisFunctions =
+          if (args.length > argIndex) args(incrementArgIndex).toInt
+          else numActiveDimensions * 500
         val function = FourierBasisGaussianProcessFunction.getFunction(
           numActiveDimensions, numBasisFunctions, 0.05, new scala.util.Random(2015L))
         val generator = new FourierBasisGaussianProcessGenerator(function, numInactiveDimensions)
@@ -88,14 +107,11 @@ object ExecuteDistributedSimulation {
         generateData(numTestPoints, 0.0, scala.util.Random).
         map(point => (point.features, point.label)).unzip
 
-    val predictionsLocalRegression = DistributedForest.predictWithLocalModel(
-      testPredictors, forests, numPNNsPerPartition, WeightedLinearRegression)
-
-    val predictionsLocalConstant = DistributedForest.predictWithLocalModel(
-      testPredictors, forests, numPNNsPerPartition, WeightedAverage)
+    val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
+      testPredictors, forests, numPNNsPerPartition, batchSize)
 
     val predictionsNaiveAveraging = DistributedForest.
-        predictWithNaiveAverage(testPredictors, forests)
+        predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
 
     sc.cancelAllJobs()
     sc.stop()
@@ -108,9 +124,6 @@ object ExecuteDistributedSimulation {
     System.out.println("Performance using local regression model:")
     printMetrics(predictionsLocalRegression)
 
-    System.out.println("Performance using local constant model:")
-    printMetrics(predictionsLocalConstant)
-
     System.out.println("Performance using naive averaging")
     printMetrics(predictionsNaiveAveraging)
   }
@@ -118,8 +131,8 @@ object ExecuteDistributedSimulation {
   def printUsageAndQuit(): Unit = {
     System.err.println(
       "Usage: ExecuteDistributedSimulation <simulationName> <numPartitions> " +
-          "<numTrainingPointsPerPartition> <numPNNsPerPartition> <numTestPoints> " +
-    "[Simulation specific parameters]")
+          "<numTrainingPointsPerPartition> <numPNNsPerPartition> <numTestPoints> <batchSize>" +
+          "[Simulation specific parameters]")
     System.exit(1)
   }
 }

@@ -8,7 +8,8 @@ object EvaluationMetrics {
   private def checkLengths(signal1: Seq[Double], signal2: Seq[Double]): Unit = {
     if (signal1.length != signal2.length) {
       throw new IllegalArgumentException(
-        "Cannot calculate correlation between arrays of different length")
+        "Cannot calculate correlation between arrays of different length: " +
+            signal1.length + " and " + signal2.length)
     }
   }
   def correlation(signal1: IndexedSeq[Double], signal2: IndexedSeq[Double]): Double = {

@@ -70,8 +70,11 @@ object ExecuteDistributedSimulation {
 
     // Generate the data
     val (dataGenerator, forestParameters) = simulationName match {
-      case "Friedman1" => (Friedman1Generator,
-          RandomForestParameters(100, true, TreeParameters(3, 10)))
+      case "Friedman1" => {
+        val numNonsenseDimensions: Int = args(incrementArgIndex).toInt
+        (Friedman1Generator(numNonsenseDimensions),
+            RandomForestParameters(100, true, TreeParameters(3, 10)))
+      }
       case "GaussianProcess" => {
         val numActiveDimensions = args(incrementArgIndex).toInt
         val numInactiveDimensions = args(incrementArgIndex).toInt
@@ -111,7 +114,7 @@ object ExecuteDistributedSimulation {
       testPredictors, forests, numPNNsPerPartition, batchSize)
 
     val predictionsNaiveAveraging = DistributedForest.
-        predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
+              predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
 
     sc.cancelAllJobs()
     sc.stop()

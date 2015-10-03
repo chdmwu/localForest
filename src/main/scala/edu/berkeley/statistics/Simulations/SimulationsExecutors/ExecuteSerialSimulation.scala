@@ -15,8 +15,11 @@ object ExecuteSerialSimulation {
 
     // Generate the data
     val (dataGenerator, forestParameters) = simulationName match {
-      case "Friedman1" => (Friedman1Generator,
-          RandomForestParameters(100, true, TreeParameters(3, 10)))
+      case "Friedman1" => {
+        val numNonsenseDimensions: Int = if (args.size > 3) args(3).toInt else 5
+        (Friedman1Generator(numNonsenseDimensions),
+            RandomForestParameters(100, true, TreeParameters(3, 10)))
+      }
       case "GaussianProcess" => {
         val numActiveDimensions = if (args.size > 3) args(3).toInt else 20
         val numInactiveDimensions = if (args.size > 4) args(4).toInt else 20

@@ -32,4 +32,12 @@ class QuickSelectSpec extends FlatSpec {
       QuickSelect(testArray, 1, scala.util.Random)
     }
   }
+
+  it should "be able to select from a large list" in {
+    val testArray = Array.fill(100000)(scala.util.Random.nextGaussian())
+
+    val q = QuickSelect(testArray, 400, scala.util.Random)
+
+    assert(q > 0)
+  }
 }

@@ -97,12 +97,18 @@ object ExecuteDistributedSimulation {
       seed => dataGenerator.generateData(
         numTrainingPointsPerPartition, 3.0, new scala.util.Random(seed)))
 
+    trainingDataRDD.persist()
+    val forceTrainingData = trainingDataRDD.count()
+
     // Train the forests
     System.out.println("Training forests")
     val forests = DistributedForest.train(trainingDataRDD, forestParameters)
 
     // Persist the forests in memory
     forests.persist()
+    val rfTrainStart = System.currentTimeMillis
+    val forceRFTraining = forests.count
+    val rfTrainTime = System.currentTimeMillis - rfTrainStart
 
     // Get the predictions
     System.out.println("Training local models and getting predictions")
@@ -110,18 +116,23 @@ object ExecuteDistributedSimulation {
         generateData(numTestPoints, 0.0, scala.util.Random).
         map(point => (point.features, point.label)).unzip
 
+    val testLocRegStart = System.currentTimeMillis
     val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, numPNNsPerPartition, batchSize)
+    val testTimeLocReg = System.currentTimeMillis - testLocRegStart
 
+    val testNaiveStart = System.currentTimeMillis
     val predictionsNaiveAveraging = DistributedForest.
               predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
+    val testTimeNaive = System.currentTimeMillis - testNaiveStart
 
     sc.cancelAllJobs()
     sc.stop()
 
     def printMetrics(predictions: IndexedSeq[Double]): Unit = {
       System.out.println("RMSE is " + EvaluationMetrics.rmse(predictions, testLabels))
-      System.out.println("Correlation is " + EvaluationMetrics.correlation(predictions, testLabels))
+      System.out.println("Correlation is " +
+          EvaluationMetrics.correlation(predictions, testLabels))
     }
     // Evaluate the predictions
     System.out.println("Performance using local regression model:")
@@ -129,6 +140,10 @@ object ExecuteDistributedSimulation {
 
     System.out.println("Performance using naive averaging")
     printMetrics(predictionsNaiveAveraging)
+
+    System.out.println("Train time: " + rfTrainTime)
+    System.out.println("Test time, local regression: " + testTimeLocReg)
+    System.out.println("Test time, naive averaging: " + testTimeNaive)
   }
 
   def printUsageAndQuit(): Unit = {

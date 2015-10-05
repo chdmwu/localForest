@@ -4,7 +4,7 @@ spark-submit \
     --class edu.berkeley.statistics.Simulations.SimulationsExecutors.ExecuteDistributedSimulation \
     --master local[8] \
     target/scala-2.10/DistributedForest-assembly-1.0.jar \
-     Friedman1 3 10000 10000 1000 100 20
+     Friedman1 4 20000 1000000 1000 100 20
 #    GaussianProcess 4 20000 1000 1000 50 10 30
     # Arguments are as follows
     # Simulation name

@@ -4,7 +4,7 @@ spark-submit \
     --class edu.berkeley.statistics.Simulations.SimulationsExecutors.ExecuteDistributedSimulation \
     --deploy-mode client \
     --master yarn-client \
-    --num-executors 10 \
+    --num-executors 12 \
     localforest_jar/DistributedForest-assembly-1.0.jar \
     Friedman1 12 5000 100000 1000 100 25
 #    GaussianProcess 4 20000 1000 1000 50 10 30

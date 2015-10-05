@@ -73,7 +73,8 @@ object ExecuteDistributedSimulation {
       case "Friedman1" => {
         val numNonsenseDimensions: Int = args(incrementArgIndex).toInt
         (Friedman1Generator(numNonsenseDimensions),
-            RandomForestParameters(100, true, TreeParameters(3, 10)))
+            RandomForestParameters(100, true,
+              TreeParameters(floor((5 + numNonsenseDimensions) / 3).toInt, 10)))
       }
       case "GaussianProcess" => {
         val numActiveDimensions = args(incrementArgIndex).toInt

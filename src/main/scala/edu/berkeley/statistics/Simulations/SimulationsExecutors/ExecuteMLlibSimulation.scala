@@ -5,10 +5,12 @@ import edu.berkeley.statistics.SerialForest.{RandomForestParameters, TreeParamet
 import edu.berkeley.statistics.Simulations.DataGenerators.{FourierBasisGaussianProcessFunction, FourierBasisGaussianProcessGenerator, Friedman1Generator}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
 import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.mllib.tree.RandomForest
+import org.apache.spark.mllib.tree.configuration.Strategy
 
 import scala.math.floor
 
-object ExecuteDistributedSimulation {
+object ExecuteMLlibSimulation {
   def main(args: Array[String]) = {
 
     var argIndex = 0
@@ -21,6 +23,8 @@ object ExecuteDistributedSimulation {
     val conf = new SparkConf().setAppName("DistributedForest")
 
     val sc = new SparkContext(conf)
+
+    val numTrees = 100
 
     // Parse the command line parameters
     val simulationName: String = args(incrementArgIndex)
@@ -35,28 +39,36 @@ object ExecuteDistributedSimulation {
     val numTrainingPointsPerPartition: Int =  try { args(incrementArgIndex).toInt } catch {
       case _ : Throwable => {
         System.err.println("Unable to parse num training points per partition: " + args(argIndex) +
-            " is not an integer")
-        printUsageAndQuit()
-        0
-      }}
-    val numPNNsPerPartition: Int = try { args(incrementArgIndex).toInt } catch {
-      case _ : Throwable => {
-        System.err.println("Unable to parse num PNNs per partition: " + args(argIndex) +
-            " is not an integer")
+          " is not an integer")
         printUsageAndQuit()
         0
       }}
     val numTestPoints: Int = try { args(incrementArgIndex).toInt } catch {
       case _ : Throwable => {
         System.err.println("Unable to parse num test points: " + args(argIndex) +
-            " is not an integer")
+          " is not an integer")
         printUsageAndQuit()
         0
       }}
-    val batchSize: Int = try { args(incrementArgIndex).toInt } catch {
+    val minInstancesPerNodes: Int = try { args(incrementArgIndex).toInt } catch {
       case _ : Throwable => {
-        System.err.println("Unable to parse batch size: " + args(argIndex) +
-            " is not an integer")
+        System.err.println("Unable to parse minInstancesPerNodes: " + args(argIndex) +
+          " is not an integer")
+        printUsageAndQuit()
+        0
+      }}
+    val maxDepth: Int = try { args(incrementArgIndex).toInt } catch {
+      case _ : Throwable => {
+        System.err.println("Unable to parse maxDepth: " + args(argIndex) +
+          " is not an integer")
+        printUsageAndQuit()
+        0
+      }}
+
+    val maxBins: Int = try { args(incrementArgIndex).toInt } catch {
+      case _ : Throwable => {
+        System.err.println("Unable to parse maxBins: " + args(argIndex) +
+          " is not an integer")
         printUsageAndQuit()
         0
       }}
@@ -76,7 +88,7 @@ object ExecuteDistributedSimulation {
         val numNonsenseDimensions: Int = args(incrementArgIndex).toInt
         d = 5 + numNonsenseDimensions
         (Friedman1Generator(numNonsenseDimensions),
-            RandomForestParameters(100, true, TreeParameters(3, 10)))
+          RandomForestParameters(100, true, TreeParameters(3, 10)))
 
       }
       case "GaussianProcess" => {
@@ -107,29 +119,27 @@ object ExecuteDistributedSimulation {
 
     // Train the forests
     System.out.println("Training forests")
-    val forests = DistributedForest.train(trainingDataRDD, forestParameters)
+    val treeStrategy = Strategy.defaultStrategy("Regression")
+    treeStrategy.setMinInstancesPerNode(minInstancesPerNodes)
+    treeStrategy.setMaxDepth(maxDepth)
+    treeStrategy.setMaxBins(maxBins)
+    val featureSubsetStrategy = "auto" // Let the algorithm choose.
 
-    // Persist the forests in memory
-    forests.persist()
     val rfTrainStart = System.currentTimeMillis
-    val forceRFTraining = forests.count
+    val model = RandomForest.trainRegressor(trainingDataRDD,
+      treeStrategy, numTrees, featureSubsetStrategy, seed = 12345)
     val rfTrainTime = System.currentTimeMillis - rfTrainStart
 
     // Get the predictions
     System.out.println("Training local models and getting predictions")
     val (testPredictors, testLabels) = dataGenerator.
-        generateData(numTestPoints, 0.0, scala.util.Random).
-        map(point => (point.features, point.label)).unzip
+      generateData(numTestPoints, 0.0, scala.util.Random).
+      map(point => (point.features, point.label)).unzip
 
-    val testLocRegStart = System.currentTimeMillis
-    val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
-      testPredictors, forests, numPNNsPerPartition, batchSize)
-    val testTimeLocReg = System.currentTimeMillis - testLocRegStart
+    val mllibStart = System.currentTimeMillis
+    val mllibPredictions = testPredictors.map(model.predict(_))
+    val mllibTestTime = System.currentTimeMillis - mllibStart
 
-    val testNaiveStart = System.currentTimeMillis
-    val predictionsNaiveAveraging = DistributedForest.
-              predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
-    val testTimeNaive = System.currentTimeMillis - testNaiveStart
 
     sc.cancelAllJobs()
     sc.stop()
@@ -137,34 +147,30 @@ object ExecuteDistributedSimulation {
     def printMetrics(predictions: IndexedSeq[Double]): Unit = {
       System.out.println("RMSE is " + EvaluationMetrics.rmse(predictions, testLabels))
       System.out.println("Correlation is " +
-          EvaluationMetrics.correlation(predictions, testLabels))
+        EvaluationMetrics.correlation(predictions, testLabels))
     }
 
     System.out.println("Dataset: " + simulationName)
     System.out.println("Number of partitions: " + numPartitions)
-    System.out.println("numPNNsPerPartition: " + numPNNsPerPartition)
     System.out.println("dimensions: " + d)
     System.out.println("Number of test points: " + numTestPoints)
-    System.out.println("Batch size: " + batchSize)
 
     // Evaluate the predictions
-    System.out.println("Performance using local regression model:")
-    printMetrics(predictionsLocalRegression)
+    System.out.println("Performance using MLlib random forest:")
+    printMetrics(mllibPredictions)
 
-    System.out.println("Performance using naive averaging")
-    printMetrics(predictionsNaiveAveraging)
 
-    System.out.println("Train time: " + rfTrainTime)
-    System.out.println("Test time, local regression: " + testTimeLocReg)
-    System.out.println("Test time, naive averaging: " + testTimeNaive)
+    System.out.println("Train time, MLlib: " + rfTrainTime)
+    System.out.println("Test time, MLlib: " + mllibTestTime)
 
   }
 
   def printUsageAndQuit(): Unit = {
     System.err.println(
-      "Usage: ExecuteDistributedSimulation <simulationName> <numPartitions> " +
-          "<numTrainingPointsPerPartition> <numPNNsPerPartition> <numTestPoints> <batchSize>" +
-          "[Simulation specific parameters]")
+      "Usage: ExecuteMLlibSimulation <simulationName> <numPartitions> " +
+        "<numTrainingPointsPerPartition>  <numTestPoints> " +
+        "<minInstancesPerNode> <maxDepth> <maxBins> " +
+        "[Simulation specific parameters]")
     System.exit(1)
   }
 }

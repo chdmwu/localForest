@@ -18,7 +18,7 @@ object ExecuteDistributedSimulation {
       old
     }
 
-    val conf = new SparkConf().setAppName("DistributedForest").setMaster("local[6]")
+    val conf = new SparkConf().setAppName("DistributedForest")
 
     val sc = new SparkContext(conf)
 

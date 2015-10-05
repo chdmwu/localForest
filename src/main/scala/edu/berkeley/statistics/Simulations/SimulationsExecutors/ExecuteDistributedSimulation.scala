@@ -35,28 +35,28 @@ object ExecuteDistributedSimulation {
     val numTrainingPointsPerPartition: Int =  try { args(incrementArgIndex).toInt } catch {
       case _ : Throwable => {
         System.err.println("Unable to parse num training points per partition: " + args(argIndex) +
-            " is not an integer")
+          " is not an integer")
         printUsageAndQuit()
         0
       }}
     val numPNNsPerPartition: Int = try { args(incrementArgIndex).toInt } catch {
       case _ : Throwable => {
         System.err.println("Unable to parse num PNNs per partition: " + args(argIndex) +
-            " is not an integer")
+          " is not an integer")
         printUsageAndQuit()
         0
       }}
     val numTestPoints: Int = try { args(incrementArgIndex).toInt } catch {
       case _ : Throwable => {
         System.err.println("Unable to parse num test points: " + args(argIndex) +
-            " is not an integer")
+          " is not an integer")
         printUsageAndQuit()
         0
       }}
     val batchSize: Int = try { args(incrementArgIndex).toInt } catch {
       case _ : Throwable => {
         System.err.println("Unable to parse batch size: " + args(argIndex) +
-            " is not an integer")
+          " is not an integer")
         printUsageAndQuit()
         0
       }}
@@ -68,21 +68,17 @@ object ExecuteDistributedSimulation {
     // Parallelize the seeds
     val seedsRDD = sc.parallelize(seeds, numPartitions)
 
-    var d = -1;
-
     // Generate the data
     val (dataGenerator, forestParameters) = simulationName match {
       case "Friedman1" => {
         val numNonsenseDimensions: Int = args(incrementArgIndex).toInt
-        d = 5 + numNonsenseDimensions
         (Friedman1Generator(numNonsenseDimensions),
-            RandomForestParameters(100, true, TreeParameters(3, 10)))
-
+          RandomForestParameters(100, true,
+            TreeParameters(floor((5 + numNonsenseDimensions) / 3).toInt, 10)))
       }
       case "GaussianProcess" => {
         val numActiveDimensions = args(incrementArgIndex).toInt
         val numInactiveDimensions = args(incrementArgIndex).toInt
-        d = numActiveDimensions + numInactiveDimensions
         val numBasisFunctions =
           if (args.length > argIndex) args(incrementArgIndex).toInt
           else numActiveDimensions * 500
@@ -118,8 +114,8 @@ object ExecuteDistributedSimulation {
     // Get the predictions
     System.out.println("Training local models and getting predictions")
     val (testPredictors, testLabels) = dataGenerator.
-        generateData(numTestPoints, 0.0, scala.util.Random).
-        map(point => (point.features, point.label)).unzip
+      generateData(numTestPoints, 0.0, scala.util.Random).
+      map(point => (point.features, point.label)).unzip
 
     val testLocRegStart = System.currentTimeMillis
     val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
@@ -128,7 +124,7 @@ object ExecuteDistributedSimulation {
 
     val testNaiveStart = System.currentTimeMillis
     val predictionsNaiveAveraging = DistributedForest.
-              predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
+      predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
     val testTimeNaive = System.currentTimeMillis - testNaiveStart
 
     sc.cancelAllJobs()
@@ -137,16 +133,8 @@ object ExecuteDistributedSimulation {
     def printMetrics(predictions: IndexedSeq[Double]): Unit = {
       System.out.println("RMSE is " + EvaluationMetrics.rmse(predictions, testLabels))
       System.out.println("Correlation is " +
-          EvaluationMetrics.correlation(predictions, testLabels))
+        EvaluationMetrics.correlation(predictions, testLabels))
     }
-
-    System.out.println("Dataset: " + simulationName)
-    System.out.println("Number of partitions: " + numPartitions)
-    System.out.println("numPNNsPerPartition: " + numPNNsPerPartition)
-    System.out.println("dimensions: " + d)
-    System.out.println("Number of test points: " + numTestPoints)
-    System.out.println("Batch size: " + batchSize)
-
     // Evaluate the predictions
     System.out.println("Performance using local regression model:")
     printMetrics(predictionsLocalRegression)
@@ -157,14 +145,13 @@ object ExecuteDistributedSimulation {
     System.out.println("Train time: " + rfTrainTime)
     System.out.println("Test time, local regression: " + testTimeLocReg)
     System.out.println("Test time, naive averaging: " + testTimeNaive)
-
   }
 
   def printUsageAndQuit(): Unit = {
     System.err.println(
       "Usage: ExecuteDistributedSimulation <simulationName> <numPartitions> " +
-          "<numTrainingPointsPerPartition> <numPNNsPerPartition> <numTestPoints> <batchSize>" +
-          "[Simulation specific parameters]")
+        "<numTrainingPointsPerPartition> <numPNNsPerPartition> <numTestPoints> <batchSize>" +
+        "[Simulation specific parameters]")
     System.exit(1)
   }
 }

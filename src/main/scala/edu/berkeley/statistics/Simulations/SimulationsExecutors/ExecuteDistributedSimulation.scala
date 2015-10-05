@@ -67,11 +67,12 @@ object ExecuteDistributedSimulation {
 
     // Parallelize the seeds
     val seedsRDD = sc.parallelize(seeds, numPartitions)
-
+    var d = -1;
     // Generate the data
     val (dataGenerator, forestParameters) = simulationName match {
       case "Friedman1" => {
         val numNonsenseDimensions: Int = args(incrementArgIndex).toInt
+        d = 5 + numNonsenseDimensions
         (Friedman1Generator(numNonsenseDimensions),
           RandomForestParameters(100, true,
             TreeParameters(floor((5 + numNonsenseDimensions) / 3).toInt, 10)))
@@ -79,6 +80,7 @@ object ExecuteDistributedSimulation {
       case "GaussianProcess" => {
         val numActiveDimensions = args(incrementArgIndex).toInt
         val numInactiveDimensions = args(incrementArgIndex).toInt
+        d = numActiveDimensions + numInactiveDimensions
         val numBasisFunctions =
           if (args.length > argIndex) args(incrementArgIndex).toInt
           else numActiveDimensions * 500
@@ -135,6 +137,13 @@ object ExecuteDistributedSimulation {
       System.out.println("Correlation is " +
         EvaluationMetrics.correlation(predictions, testLabels))
     }
+
+    System.out.println("Dataset: " + simulationName)
+    System.out.println("Number of partitions: " + numPartitions)
+    System.out.println("numPNNsPerPartition: " + numPNNsPerPartition)
+    System.out.println("dimensions: " + d)
+    System.out.println("Number of test points: " + numTestPoints)
+    System.out.println("Batch size: " + batchSize)
     // Evaluate the predictions
     System.out.println("Performance using local regression model:")
     printMetrics(predictionsLocalRegression)

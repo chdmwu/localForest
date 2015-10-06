@@ -162,8 +162,8 @@ object ExecuteMLlibSimulation {
     printMetrics(mllibPredictions)
 
 
-    System.out.println("Train time (seconds), MLlib: " + rfTrainTime * 10e-3)
-    System.out.println("Test time (seconds), MLlib: " + mllibTestTime* 10e-3)
+    System.out.println("Train time (seconds), MLlib: " + rfTrainTime * 1e-3)
+    System.out.println("Test time (seconds), MLlib: " + mllibTestTime* 1e-3)
 
   }
 

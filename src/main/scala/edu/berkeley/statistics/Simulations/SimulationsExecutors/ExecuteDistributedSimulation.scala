@@ -152,9 +152,9 @@ object ExecuteDistributedSimulation {
     System.out.println("Performance using naive averaging")
     printMetrics(predictionsNaiveAveraging)
 
-    System.out.println("Train time: " + rfTrainTime)
-    System.out.println("Test time, local regression: " + testTimeLocReg)
-    System.out.println("Test time, naive averaging: " + testTimeNaive)
+    System.out.println("Train time: " + rfTrainTime* 10e-3)
+    System.out.println("Test time, local regression: " + testTimeLocReg* 10e-3)
+    System.out.println("Test time, naive averaging: " + testTimeNaive* 10e-3)
   }
 
   def printUsageAndQuit(): Unit = {

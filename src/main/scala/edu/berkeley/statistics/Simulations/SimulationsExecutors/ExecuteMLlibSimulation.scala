@@ -152,6 +152,8 @@ object ExecuteMLlibSimulation {
 
     System.out.println("Dataset: " + simulationName)
     System.out.println("Number of partitions: " + numPartitions)
+    System.out.println("Number of training points per partition: " + numTrainingPointsPerPartition)
+    System.out.println("Total Training Points: " + numTrainingPointsPerPartition*numPartitions)
     System.out.println("dimensions: " + d)
     System.out.println("Number of test points: " + numTestPoints)
 

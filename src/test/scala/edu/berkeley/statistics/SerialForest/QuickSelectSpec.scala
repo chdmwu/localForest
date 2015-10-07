@@ -40,4 +40,12 @@ class QuickSelectSpec extends FlatSpec {
 
     assert(q > 0)
   }
+
+  it should "be able to select from a large list with repeats" in {
+    val testArray = RandomSampling.sampleWithReplacement(100000, 100000, scala.util.Random)
+
+    val q = QuickSelect(testArray, 50000, scala.util.Random)
+
+    assert(q > 40000 && q < 60000)
+  }
 }

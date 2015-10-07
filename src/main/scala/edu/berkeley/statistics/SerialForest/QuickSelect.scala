@@ -7,8 +7,9 @@ object QuickSelect {
   }
 
   private def
-  recursiveQuickSelect[A <% Ordered[A]](sequence: Array[A], n: Int, startIndex: Int, endIndex: Int,
-                                                    rng: scala.util.Random): A = {
+  recursiveQuickSelect[A <% Ordered[A]](sequence: Array[A],
+                                        n: Int, startIndex: Int, endIndex: Int,
+                                        rng: scala.util.Random): A = {
 
     val seqLength = endIndex - startIndex
     if (n > seqLength) {

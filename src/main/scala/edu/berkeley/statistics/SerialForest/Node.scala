@@ -1,6 +1,7 @@
 package edu.berkeley.statistics.SerialForest
 
 import org.apache.spark.mllib.regression.LabeledPoint
+import scala.math.floor
 
 abstract class Node private[SerialForest] () {
 }
@@ -52,10 +53,37 @@ object Node {
       // Copy out the y values at this node
       val yValsAtNode = rowsHere.map(trainingData(_).label)
 
+      def makeLeafOrSplitRandomly: Node  = {
+        if (rowsHere.size > treeParameters.nodeSize) {
+          // A hack
+          // Pick a random variable
+          val splitVar = candidateVars(0)
+          val predictorValues: IndexedSeq[Double] =
+            rowsHere.map(trainingData(_).features(splitVar))
+          val splitPoint = QuickSelect(predictorValues.toArray,
+            floor(predictorValues.size / 2).toInt, rng)
+          val (idcsLeft, idcsRight) =
+            rowsHere.partition(trainingData(_).features(splitVar) <= splitPoint)
+          if (idcsLeft.size == rowsHere.length || idcsRight.size == rowsHere.length) {
+            if (idcsLeft.size > 1000) {
+              System.out.println(idcsLeft.size)
+            } else if (idcsRight.size > 1000){
+              System.out.println(idcsRight.size)
+            }
+            LeafNode(rowsHere, trainingData)
+          } else {
+            InternalNode(Node.createNode(idcsLeft, treeParameters, trainingData, rng),
+              Node.createNode(idcsRight, treeParameters, trainingData, rng), splitVar,
+              splitPoint)
+          }
+        } else {
+          LeafNode(rowsHere, trainingData)
+        }
+      }
+
       // Check if there is any variation in the response signal
       if (checkIfVariation(yValsAtNode) == false) {
-
-        return LeafNode(rowsHere, trainingData)
+        return makeLeafOrSplitRandomly
       }
 
       // Create initialized scoreKeeper
@@ -137,23 +165,19 @@ object Node {
 
       // No viable split is found, so make a leaf
       if (bestScore == 0.0) {
-        return LeafNode(rowsHere, trainingData)
+        return makeLeafOrSplitRandomly
       }
 
       val (leftIndices, rightIndices) = rowsHere.partition(
         trainingData(_).features(bestVariable) <= bestSplit)
 
-      if (leftIndices.length == 0 || rightIndices.length == 0) {
-        if (rowsHere.length > 5000) {
-          System.out.println(leftIndices.length.toString + " " + rightIndices.length.toString)
-        }
-        return LeafNode(rowsHere, trainingData)
+      if (leftIndices.length == rowsHere.length || rightIndices.length == rowsHere.length) {
+        return makeLeafOrSplitRandomly
       }
 
       InternalNode(Node.createNode(leftIndices, treeParameters, trainingData, rng),
         Node.createNode(rightIndices, treeParameters, trainingData, rng), bestVariable,
         bestSplit)
-
     }
   }
 }

@@ -19,7 +19,6 @@ object ExecuteDistributedSimulation {
     }
 
     val conf = new SparkConf().setAppName("DistributedForest")
-
     val sc = new SparkContext(conf)
 
     // Parse the command line parameters
@@ -113,6 +112,8 @@ object ExecuteDistributedSimulation {
     val forceRFTraining = forests.count
     val rfTrainTime = System.currentTimeMillis - rfTrainStart
 
+    val fit = DistributedForest.getFeatureImportance(forests)
+
     // Get the predictions
     System.out.println("Training local models and getting predictions")
     val (testPredictors, testLabels) = dataGenerator.
@@ -124,13 +125,18 @@ object ExecuteDistributedSimulation {
       testPredictors, forests, numPNNsPerPartition, batchSize)
     val testTimeLocReg = System.currentTimeMillis - testLocRegStart
 
+    //TODO: (Chris) get active set from the covariances of the full PNNs instead of dropping test points down forest 2x
+    val activeSetStart = System.currentTimeMillis
+    val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
+      testPredictors, forests, numPNNsPerPartition, batchSize, fit.getActiveSet)
+    val testTimeActiveSet = System.currentTimeMillis - activeSetStart
+
     val testNaiveStart = System.currentTimeMillis
     val predictionsNaiveAveraging = DistributedForest.
       predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
     val testTimeNaive = System.currentTimeMillis - testNaiveStart
 
-    sc.cancelAllJobs()
-    sc.stop()
+
 
     def printMetrics(predictions: IndexedSeq[Double]): Unit = {
       System.out.println("RMSE is " + EvaluationMetrics.rmse(predictions, testLabels))
@@ -145,16 +151,25 @@ object ExecuteDistributedSimulation {
     System.out.println("dimensions: " + d)
     System.out.println("Number of test points: " + numTestPoints)
     System.out.println("Batch size: " + batchSize)
+    System.out.println("Feature Importance Active Set: " + fit.getActiveSet)
     // Evaluate the predictions
     System.out.println("Performance using local regression model:")
     printMetrics(predictionsLocalRegression)
+    System.out.println("Performance using feature Selection")
+    printMetrics(predictionsActiveSet)
 
     System.out.println("Performance using naive averaging")
     printMetrics(predictionsNaiveAveraging)
 
     System.out.println("Train time: " + rfTrainTime* 1e-3)
     System.out.println("Test time, local regression: " + testTimeLocReg* 1e-3)
+    System.out.println("Test time, active set local regression: " + testTimeActiveSet* 1e-3)
     System.out.println("Test time, naive averaging: " + testTimeNaive* 1e-3)
+
+
+
+    sc.cancelAllJobs()
+    sc.stop()
   }
 
   def printUsageAndQuit(): Unit = {

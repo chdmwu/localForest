@@ -38,7 +38,7 @@ object Node {
   // This will find the split point and do the splitting into child nodes
   def createNode(rowsHere: IndexedSeq[Int], treeParameters: TreeParameters,
                  trainingData: IndexedSeq[LabeledPoint],
-                 rng: scala.util.Random): Node = {
+                 rng: scala.util.Random, fit: FeatureImportance): Node = {
 
 
     if (rowsHere.length <= treeParameters.nodeSize) {
@@ -72,8 +72,8 @@ object Node {
             }
             LeafNode(rowsHere, trainingData)
           } else {
-            InternalNode(Node.createNode(idcsLeft, treeParameters, trainingData, rng),
-              Node.createNode(idcsRight, treeParameters, trainingData, rng), splitVar,
+            InternalNode(Node.createNode(idcsLeft, treeParameters, trainingData, rng, fit),
+              Node.createNode(idcsRight, treeParameters, trainingData, rng, fit), splitVar,
               splitPoint)
           }
         } else {
@@ -88,6 +88,7 @@ object Node {
 
       // Create initialized scoreKeeper
       val scoreKeeper: AnovaScoreKeeper = new AnovaScoreKeeper(yValsAtNode)
+      val currNodeScore = scoreKeeper.getCurrentScore()
 
       // Function to get score and split point for a feature
       // TODO(adam): convert to using some and none for non-feasible variables?
@@ -137,6 +138,7 @@ object Node {
         })
 
 
+
         if (!foundPredictorVariation) {
           (0.0, 0.0)
         } else {
@@ -162,9 +164,10 @@ object Node {
             }
           }
         )
-
+      fit.updateGain(bestVariable, currNodeScore - bestScore);
+      //println(currNodeScore - bestScore)
       // No viable split is found, so make a leaf
-      if (bestScore == 0.0) {
+      if (bestScore == currNodeScore) { //changed default behavior of Scorekeeper, no longer returns 0.0 on no split.
         return makeLeafOrSplitRandomly
       }
 
@@ -175,8 +178,8 @@ object Node {
         return makeLeafOrSplitRandomly
       }
 
-      InternalNode(Node.createNode(leftIndices, treeParameters, trainingData, rng),
-        Node.createNode(rightIndices, treeParameters, trainingData, rng), bestVariable,
+      InternalNode(Node.createNode(leftIndices, treeParameters, trainingData, rng, fit),
+        Node.createNode(rightIndices, treeParameters, trainingData, rng, fit), bestVariable,
         bestSplit)
     }
   }

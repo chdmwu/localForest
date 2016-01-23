@@ -14,6 +14,7 @@ abstract class ScoreKeeper {
 class AnovaScoreKeeper(initialRightValues: IndexedSeq[Double]) extends ScoreKeeper {
   private val initialRightSum: Double = initialRightValues.sum
   private val initialRightNum: Int = initialRightValues.length
+  private val sqSum: Double = initialRightValues.map(x => x*x).sum
 
   private var leftSum: Double = 0.0
   private var rightSum: Double = initialRightSum
@@ -31,7 +32,8 @@ class AnovaScoreKeeper(initialRightValues: IndexedSeq[Double]) extends ScoreKeep
 
   def getCurrentScore(): Double = {
     if (leftNum == 0 || rightNum == 0) {
-      0.0
+      -1 * pow(initialRightSum,2) / initialRightNum;
+      //changed default behavior of Scorekeeper, no longer returns 0.0 on no split. Now returns score of parent node.
     } else {
       -1 * pow(leftSum, 2) / leftNum - pow(rightSum, 2) / rightNum;
     }

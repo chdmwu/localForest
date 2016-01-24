@@ -5,7 +5,6 @@ import org.apache.spark.mllib.linalg.{Vector => mllibVector}
 import org.apache.spark.mllib.regression.LabeledPoint
 
 object WeightedLinearRegression {
-
   def getBetaHat(covMatrices: IndexedSeq[DenseMatrix[Double]],
                     crossCovArrays: IndexedSeq[DenseVector[Double]]): DenseVector[Double] = {
     val totCovMatrix = covMatrices.foldLeft[DenseMatrix[Double]](

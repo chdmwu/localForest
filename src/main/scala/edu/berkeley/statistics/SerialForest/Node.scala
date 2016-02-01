@@ -96,6 +96,7 @@ object Node {
 
         // Copy out the values of the column in this node
         val predictorValues = rowsHere.map(trainingData(_).features(featureIndex))
+
         // Get the indices of the sorted set of predictors
         // val predictorIndices = predictorValues.indices.sortBy(predictorValues(_))
 
@@ -164,7 +165,12 @@ object Node {
             }
           }
         )
-      fit.updateGain(bestVariable, currNodeScore - bestScore);
+
+      val labelValues = rowsHere.map(trainingData(_).label)
+      val pmean = labelValues.sum/labelValues.length
+      val variance = labelValues.map(y => Math.pow(y-pmean,2)).sum/labelValues.length
+
+      fit.updateGain(bestVariable, (currNodeScore - bestScore));
       //println(currNodeScore - bestScore)
       // No viable split is found, so make a leaf
       if (bestScore == currNodeScore) { //changed default behavior of Scorekeeper, no longer returns 0.0 on no split.

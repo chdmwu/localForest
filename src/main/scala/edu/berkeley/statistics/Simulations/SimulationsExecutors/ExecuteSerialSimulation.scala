@@ -60,7 +60,7 @@ object ExecuteSerialSimulation {
     println(fit.getNumberOfSplits)
     //println(gains)
     println(fit.getAvgImportance)
-    println(fit.getActiveSet)
+    println(fit.getActiveSet())
     val ys =  trainingData.map(_.label);
     val variance = {
       val count = ys.length
@@ -72,7 +72,7 @@ object ExecuteSerialSimulation {
     println(ys.min)
     println(ys.sum/ys.length)
     println(trainingData(0))
-    println(FeatureImportance.getActiveFeatures(trainingData(0), fit.getActiveSet))
+    println(FeatureImportance.getActiveFeatures(trainingData(0), fit.getActiveSet()))
     println(FeatureImportance.getActiveFeatures(trainingData(0), null))
     val yHatForest = testData.map(x => forest.predict(x.features))
     System.out.println("RMSE is: " +

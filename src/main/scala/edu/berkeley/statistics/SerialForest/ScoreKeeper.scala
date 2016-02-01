@@ -39,6 +39,8 @@ class AnovaScoreKeeper(initialRightValues: IndexedSeq[Double]) extends ScoreKeep
     }
   }
 
+  def getTotalNumPoints = initialRightNum
+
   def reset() = {
     rightSum = initialRightSum
     rightNum = initialRightNum

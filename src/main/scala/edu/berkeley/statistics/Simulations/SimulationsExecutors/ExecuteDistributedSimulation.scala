@@ -1,24 +1,25 @@
 package edu.berkeley.statistics.Simulations.SimulationsExecutors
 
 import edu.berkeley.statistics.DistributedForest.DistributedForest
-import edu.berkeley.statistics.SerialForest.{RandomForestParameters, TreeParameters}
+import edu.berkeley.statistics.SerialForest.{FeatureImportance, RandomForestParameters, TreeParameters, RandomForest}
 import edu.berkeley.statistics.Simulations.DataGenerators.{FourierBasisGaussianProcessFunction, FourierBasisGaussianProcessGenerator, Friedman1Generator}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
+import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.{SparkConf, SparkContext}
-
-import scala.math.floor
+import org.apache.spark.sql.{DataFrame, Row}
+import scala.math.ceil
 
 object ExecuteDistributedSimulation {
   val usage =
     """ExecuteDistributedSimulation --simulationName [name] --nPartitions [val] --nPointsPerPartition [val] --nPnnsPerPartition [val]
       |--nTest [val] --batchSize [val] --nActive [val] --nInactive [val] --nBasis [val] --ntree [val --mtry [val] --minNodeSize [val] --runGlobalRF [val]
+      |--sampleWithReplacement [val]
     """.stripMargin
   def main(args: Array[String]) = {
 
-
-
     val conf = new SparkConf().setAppName("DistributedForest")
     val sc = new SparkContext(conf)
+    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
 
 
     // For large simulations, may have to edit /usr/local/etc/sbtopts on MacOS if using sbt
@@ -31,7 +32,7 @@ object ExecuteDistributedSimulation {
       list match {
         case Nil => map
         case "--simulationName" :: value :: tail =>
-          nextOption(map ++ Map('nPartitions -> value.toString), tail)
+          nextOption(map ++ Map('simulationName -> value.toString), tail)
         case "--nPartitions" :: value :: tail =>
           nextOption(map ++ Map('nPartitions -> value.toInt), tail)
         case "--nPointsPerPartition" :: value :: tail =>
@@ -56,6 +57,15 @@ object ExecuteDistributedSimulation {
           nextOption(map ++ Map('minNodeSize -> value.toInt), tail)
         case "--runGlobalRF" :: value :: tail =>
           nextOption(map ++ Map('runGlobalRF -> value.toInt), tail)
+        case "--runOracle" :: value :: tail =>
+          nextOption(map ++ Map('runOracle -> value.toInt), tail)
+        case "--sampleWithReplacement" :: value :: tail =>
+          nextOption(map ++ Map('sampleWithReplacement -> value.toInt), tail)
+        case "--threshold1" :: value :: tail =>
+          nextOption(map ++ Map('threshold1 -> value.toDouble), tail)
+        case "--threshold2" :: value :: tail =>
+          nextOption(map ++ Map('threshold2 -> value.toDouble), tail)
+
         case option :: tail => System.err.println("Unknown option "+option)
           System.err.println(usage)
           sys.exit(1)
@@ -70,8 +80,14 @@ object ExecuteDistributedSimulation {
       case _ => System.err.println("invalid parameter: " + value)
         sys.exit(1)
     }
+    def castDouble(value: Any) : Double = value match {
+      case x: Double => x
+      case _ => System.err.println("invalid parameter: " + value)
+        sys.exit(1)
+    }
     val defaultArgs = Map('simulationName -> "Friedman1", 'nPartitions ->4, 'nPointsPerPartition ->2500, 'nPnnsPerPartition ->1000,
-      'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10).withDefaultValue(-1);
+      'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'sampleWithReplacement -> 1
+      , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33).withDefaultValue(-1);
     val options = nextOption(Map().withDefaultValue(-1),arglist)
     if(options('simulationName) == "Friedman1"){
       if(options('nActive) != -1 && options('nActive) != 5){
@@ -83,7 +99,7 @@ object ExecuteDistributedSimulation {
         System.err.println("Warning: nBasis only applicable to GaussianProcess dataset, user supplied nBasis ignored.")
       }
     }
-    //println (options)
+
     val simulationName = getArg(options, defaultArgs, 'simulationName)
     val nPartitions = castInt(getArg(options, defaultArgs, 'nPartitions))
     val nPointsPerPartition = castInt(getArg(options, defaultArgs, 'nPointsPerPartition))
@@ -96,11 +112,16 @@ object ExecuteDistributedSimulation {
     val ntree =  castInt(getArg(options, defaultArgs, 'ntree))
     val minNodeSize =  castInt(getArg(options, defaultArgs, 'minNodeSize))
     val mtry =  castInt(getArg(options, defaultArgs, 'mtry) match {
-      case -1 => floor((nActive + nInactive) / 3).toInt
+      case -1 => ceil((nActive + nInactive) / 3).toInt
       case x => x
     })
     val runGlobalRF = castInt(getArg(options, defaultArgs, 'runGlobalRF)) == 1
-
+    val sampleWithReplacement = castInt(getArg(options, defaultArgs, 'sampleWithReplacement)) == 1
+    val globalMinNodeSize = 10;
+    val oracle = IndexedSeq.range(0,nActive)
+    val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1
+    val threshold1 = castDouble(getArg(options, defaultArgs, 'threshold1))
+    val threshold2 = castDouble(getArg(options, defaultArgs, 'threshold2))
 
 
     //System.out.println("Generating the data")
@@ -110,21 +131,19 @@ object ExecuteDistributedSimulation {
     // Parallelize the seeds
     val seedsRDD = sc.parallelize(seeds, nPartitions)
     var d = -1;
+    val rfparams = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, minNodeSize))
     // Generate the data
     val (dataGenerator, forestParameters) = simulationName match {
       case "Friedman1" => {
         d = 5 + nInactive
-        (Friedman1Generator(nInactive),
-          RandomForestParameters(ntree, true,
-            TreeParameters(mtry, minNodeSize)))
+        (Friedman1Generator(nInactive), rfparams)
       }
       case "GaussianProcess" => {
         d = nActive + nInactive
         val function = FourierBasisGaussianProcessFunction.getFunction(
           nActive, nBasis, 0.05, new scala.util.Random(2015L))
         val generator = new FourierBasisGaussianProcessGenerator(function, nInactive)
-        (generator, RandomForestParameters(
-          ntree, true, TreeParameters(mtry, minNodeSize)))
+        (generator, rfparams)
       }
       case other => {
         throw new IllegalArgumentException("Unknown simulation name: " + simulationName)
@@ -135,27 +154,40 @@ object ExecuteDistributedSimulation {
       seed => dataGenerator.generateData(
         nPointsPerPartition, 3.0, new scala.util.Random(seed)))
 
+    //normalize the labels
     trainingDataRDD.persist()
-    val forceTrainingData = trainingDataRDD.count()
+    val nTrain = trainingDataRDD.count()
+    val trMean = trainingDataRDD.map(point => point.label).sum/nTrain
+    val trVariance = trainingDataRDD.map(point => Math.pow(point.label - trMean, 2)).sum / nTrain
+    val trStdev = Math.sqrt(trVariance)
+
+    val stdTrainingDataRDD = trainingDataRDD.map(point => new LabeledPoint((point.label-trMean)/trStdev, point.features))
+    trainingDataRDD.unpersist()
+    val forceTrainingData = stdTrainingDataRDD.count()
+    stdTrainingDataRDD.persist()
+
 
      //Train the forests
     //System.out.println("Training forests")
-    val forests = DistributedForest.train(trainingDataRDD, forestParameters)
+    val forests = DistributedForest.train(stdTrainingDataRDD, forestParameters)
 
 
     // Persist the forests in memory
     forests.persist()
     val rfTrainStart = System.currentTimeMillis
     val forceRFTraining = forests.count
-    val rfTrainTime = System.currentTimeMillis - rfTrainStart
+    val rfTrainTime = (System.currentTimeMillis - rfTrainStart) * 1e-3
 
     val fit = DistributedForest.getFeatureImportance(forests)
 
     // Get the predictions
-    System.out.println("Training local models and getting predictions")
+    //System.out.println("Training local models and getting predictions")
     val (testPredictors, testLabels) = dataGenerator.
       generateData(nTest, 0.0, scala.util.Random).
-      map(point => (point.features, point.label)).unzip
+      map(point => (point.features, (point.label-trMean)/trStdev)).unzip
+    //  map(point => (point.features, point.label)).unzip
+
+    //normalize the labels
 
     val testLocRegStart = System.currentTimeMillis
     val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
@@ -165,13 +197,59 @@ object ExecuteDistributedSimulation {
     //TODO: (Chris) get active set from the covariances of the full PNNs instead of dropping test points down forest 2x
     val activeSetStart = System.currentTimeMillis
     val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
-      testPredictors, forests, nPnnsPerPartition, batchSize, fit.getActiveSet)
+      testPredictors, forests, nPnnsPerPartition, batchSize, fit.getActiveSet(threshold1, threshold2))
     val featImpSiloTestTime = (System.currentTimeMillis - activeSetStart) * 1e-3
 
     val testNaiveStart = System.currentTimeMillis
     val predictionsNaiveAveraging = DistributedForest.
       predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
     val naiveTestTime = (System.currentTimeMillis - testNaiveStart) * 1e-3
+
+
+
+    //Dont run with with huge datasets
+    var globalTrainTime = -1.0
+    var globalTestTime = -1.0
+    var globalRMSE = -1.0
+    var globalCorr = -1.0
+    var globalOracleRMSE = -1.0
+    var siloOracle1RMSE = -1.0
+    var siloOracle2RMSE = -1.0
+    if(runOracle){
+      val predictionsSiloOracle2 = DistributedForest.predictWithLocalRegressionBatch(
+        testPredictors, forests, nPnnsPerPartition, batchSize, oracle)
+      forests.unpersist()
+      val oracleData = stdTrainingDataRDD.map(x => FeatureImportance.getActiveFeatures(x, oracle))
+      stdTrainingDataRDD.unpersist()
+      oracleData.persist()
+      val forestParametersOracle = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(Math.ceil(oracle.length/3).toInt, minNodeSize))
+      val forestsOracle1 = DistributedForest.train(oracleData, forestParametersOracle)
+      val rfparamsGlobalOracle = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(Math.ceil(oracle.length/3).toInt, globalMinNodeSize))
+      if(runGlobalRF){
+        val globalRFOracle = RandomForest.train(oracleData.collect.toIndexedSeq, rfparamsGlobalOracle)
+        val predictionsGlobalRFOracle = testPredictors.map(x => FeatureImportance.getActiveFeatures(x, oracle)).map(x => globalRFOracle.predict(x))
+        globalOracleRMSE = EvaluationMetrics.rmse(predictionsGlobalRFOracle, testLabels)
+      }
+      oracleData.unpersist()
+      val predictionsSiloOracle1 = DistributedForest.predictWithLocalRegressionBatch(
+        testPredictors.map(x => FeatureImportance.getActiveFeatures(x, oracle)), forestsOracle1, nPnnsPerPartition, batchSize, oracle)
+      siloOracle1RMSE = EvaluationMetrics.rmse(predictionsSiloOracle1, testLabels)
+      siloOracle2RMSE = EvaluationMetrics.rmse(predictionsSiloOracle2, testLabels)
+    }
+    if(runGlobalRF){
+      val trainingData = stdTrainingDataRDD.collect.toIndexedSeq
+      val globalTrainStart = System.currentTimeMillis
+      val rfparamsGlobal = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, globalMinNodeSize))
+      val globalRF = RandomForest.train(trainingData, rfparamsGlobal)
+      globalTrainTime = (System.currentTimeMillis - globalTrainStart) * 1e-3
+
+      val globalTestStart = System.currentTimeMillis
+      val predictionsGlobalRF = testPredictors.map(x => globalRF.predict(x))
+      globalTestTime = (System.currentTimeMillis - globalTestStart) * 1e-3
+      globalRMSE = EvaluationMetrics.rmse(predictionsGlobalRF, testLabels)
+      globalCorr = EvaluationMetrics.correlation(predictionsGlobalRF, testLabels)
+
+    }
 
 
 
@@ -189,6 +267,7 @@ object ExecuteDistributedSimulation {
 
     def printStuff = {
       println(simulationName + "," + nPartitions + "," + nPointsPerPartition + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","+ minNodeSize + ",")
+      println (options)
       System.out.println("Dataset: " + simulationName)
       System.out.println("Number of partitions: " + nPartitions)
       System.out.println("Number of training points per partition: " + nPointsPerPartition)
@@ -196,7 +275,10 @@ object ExecuteDistributedSimulation {
       System.out.println("dimensions: " + d)
       System.out.println("Number of test points: " + nTest)
       System.out.println("Batch size: " + batchSize)
-      System.out.println("Feature Importance Active Set: " + fit.getActiveSet)
+      System.out.println("Feature Importance Active Set: " + fit.getActiveSet(threshold1, threshold2))
+      System.out.println("Feature Importance Values: " + fit.getAvgImportance)
+      System.out.println("Feature Importance Sum: " + fit.getSplitGains)
+      System.out.println("Feature Importance Num: " + fit.getNumberOfSplits)
       // Evaluate the predictions
       System.out.println("Performance using local regression model:")
       printMetrics(predictionsLocalRegression)
@@ -211,20 +293,32 @@ object ExecuteDistributedSimulation {
       System.out.println("Test time, active set local regression: " + featImpSiloTestTime)
       System.out.println("Test time, naive averaging: " + naiveTestTime)
     }
+    def printFeat = {
+      System.out.println("Feature Importance Thresholds: " + threshold1 + " " + threshold2)
+      System.out.println("Feature Importance Values: " + fit.getAvgImportance)
+      System.out.println("Feature Importance Sum: " + fit.getSplitGains)
+      System.out.println("Feature Importance Num: " + fit.getNumberOfSplits)
+      System.out.println("Feature Importance Active Set: " + fit.getActiveSet(threshold1, threshold2))
+    }
     def printFormat = {
       println("siloRMSE,featImpSiloRMSE,naiveRMSE,siloCorr,featImpSiloCorr,naiveCorr,siloTestTime,featImpSiloTestTime,naiveTestTime,simulationName,nPartitions,nPointsPerPartition,nPnnsPerPartition,nTest,batchSize,nActive,nInactive," +
         "nBasis,mtry,ntree,minNodeSize")
     }
     def printFormatted = {
-      println(siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","
-        + siloCorr + "," + featImpSiloCorr + "," + naiveCorr + ","
-        + siloTestTime + "," + featImpSiloTestTime + "," + naiveTestTime+ ","
+      println(siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","
+        + siloCorr + "," + featImpSiloCorr + "," + naiveCorr + ","+ globalCorr + ","
+        + siloTestTime + "," + featImpSiloTestTime + "," + naiveTestTime+ "," + rfTrainTime + "," + globalTrainTime + "," + globalTestTime + ","
         + simulationName + "," + nPartitions + "," + nPointsPerPartition + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","
-        + minNodeSize)
+        + minNodeSize + "," + globalMinNodeSize + "," + fit.getActiveSet().length)
+    }
+    def printRMSEs = {
+      println("RMSE,"+siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","+ globalOracleRMSE + ","+ siloOracle1RMSE + ","+ siloOracle2RMSE)
     }
     //printStuff
     //printFormat
+    printFeat
     printFormatted
+    printRMSEs
 
 
     sc.cancelAllJobs()

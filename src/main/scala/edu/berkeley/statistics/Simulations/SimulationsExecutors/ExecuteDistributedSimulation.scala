@@ -65,6 +65,8 @@ object ExecuteDistributedSimulation {
           nextOption(map ++ Map('threshold1 -> value.toDouble), tail)
         case "--threshold2" :: value :: tail =>
           nextOption(map ++ Map('threshold2 -> value.toDouble), tail)
+        case "--nValid" :: value :: tail =>
+          nextOption(map ++ Map('nValid -> value.toDouble), tail)
 
         case option :: tail => System.err.println("Unknown option "+option)
           System.err.println(usage)
@@ -87,7 +89,7 @@ object ExecuteDistributedSimulation {
     }
     val defaultArgs = Map('simulationName -> "Friedman1", 'nPartitions ->4, 'nPointsPerPartition ->2500, 'nPnnsPerPartition ->1000,
       'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'sampleWithReplacement -> 1
-      , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33).withDefaultValue(-1);
+      , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000).withDefaultValue(-1);
     val options = nextOption(Map().withDefaultValue(-1),arglist)
     if(options('simulationName) == "Friedman1"){
       if(options('nActive) != -1 && options('nActive) != 5){
@@ -122,6 +124,7 @@ object ExecuteDistributedSimulation {
     val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1
     val threshold1 = castDouble(getArg(options, defaultArgs, 'threshold1))
     val threshold2 = castDouble(getArg(options, defaultArgs, 'threshold2))
+    val nValid = castInt(getArg(options, defaultArgs, 'nValid))
 
 
     //System.out.println("Generating the data")
@@ -185,6 +188,9 @@ object ExecuteDistributedSimulation {
     val (testPredictors, testLabels) = dataGenerator.
       generateData(nTest, 0.0, scala.util.Random).
       map(point => (point.features, (point.label-trMean)/trStdev)).unzip
+    val (validPredictors, validLabels) = dataGenerator.
+      generateData(nValid, 0.0, scala.util.Random).
+      map(point => (point.features, (point.label-trMean)/trStdev)).unzip
     //  map(point => (point.features, point.label)).unzip
 
     //normalize the labels
@@ -195,9 +201,36 @@ object ExecuteDistributedSimulation {
     val siloTestTime = (System.currentTimeMillis - testLocRegStart) * 1e-3
 
     //TODO: (Chris) get active set from the covariances of the full PNNs instead of dropping test points down forest 2x
+    /**
     val activeSetStart = System.currentTimeMillis
     val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, nPnnsPerPartition, batchSize, fit.getActiveSet(threshold1, threshold2))
+    val featImpSiloTestTime = (System.currentTimeMillis - activeSetStart) * 1e-3
+  */
+    def validateActiveSet() = {
+      var bestRMSE = -1.0
+      var bestActive = -1
+      var bestCorr = -1.0
+      var bestPredictions = IndexedSeq(0.0)
+      for(nActive <- 1 to d){
+        val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
+          validPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(nActive))
+        val currRMSE = EvaluationMetrics.rmse(predictionsActiveSet, validLabels)
+        val currCorr = EvaluationMetrics.correlation(predictionsActiveSet, validLabels)
+        if(bestRMSE < 0 || currRMSE < bestRMSE){
+          bestRMSE = currRMSE
+          bestActive = nActive
+          bestCorr = currCorr
+          bestPredictions = predictionsActiveSet
+        }
+      }
+      (bestRMSE, bestCorr, bestActive, bestPredictions)
+    }
+
+    val activeSetStart = System.currentTimeMillis
+    val (bestRMSE, bestCorr, bestActive, bestPredictions) = validateActiveSet()
+    val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
+      testPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(bestActive))
     val featImpSiloTestTime = (System.currentTimeMillis - activeSetStart) * 1e-3
 
     val testNaiveStart = System.currentTimeMillis
@@ -207,7 +240,6 @@ object ExecuteDistributedSimulation {
 
 
 
-    //Dont run with with huge datasets
     var globalTrainTime = -1.0
     var globalTestTime = -1.0
     var globalRMSE = -1.0
@@ -215,6 +247,8 @@ object ExecuteDistributedSimulation {
     var globalOracleRMSE = -1.0
     var siloOracle1RMSE = -1.0
     var siloOracle2RMSE = -1.0
+
+    //Dont runGlobalRF with with huge datasets
     if(runOracle){
       val predictionsSiloOracle2 = DistributedForest.predictWithLocalRegressionBatch(
         testPredictors, forests, nPnnsPerPartition, batchSize, oracle)
@@ -288,6 +322,7 @@ object ExecuteDistributedSimulation {
       System.out.println("Performance using naive averaging")
       printMetrics(predictionsNaiveAveraging)
 
+
       System.out.println("Train time: " + rfTrainTime )
       System.out.println("Test time, local regression: " + siloTestTime)
       System.out.println("Test time, active set local regression: " + featImpSiloTestTime)
@@ -299,6 +334,8 @@ object ExecuteDistributedSimulation {
       System.out.println("Feature Importance Sum: " + fit.getSplitGains)
       System.out.println("Feature Importance Num: " + fit.getNumberOfSplits)
       System.out.println("Feature Importance Active Set: " + fit.getActiveSet(threshold1, threshold2))
+      System.out.println("Top Feature Active Set Number: " + bestActive)
+      System.out.println("Top Feature Active Set: " + fit.getTopFeatures(bestActive))
     }
     def printFormat = {
       println("siloRMSE,featImpSiloRMSE,naiveRMSE,siloCorr,featImpSiloCorr,naiveCorr,siloTestTime,featImpSiloTestTime,naiveTestTime,simulationName,nPartitions,nPointsPerPartition,nPnnsPerPartition,nTest,batchSize,nActive,nInactive," +

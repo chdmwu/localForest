@@ -4,6 +4,7 @@ import edu.berkeley.statistics.DistributedForest.DistributedForest
 import edu.berkeley.statistics.SerialForest.{FeatureImportance, RandomForestParameters, TreeParameters, RandomForest}
 import edu.berkeley.statistics.Simulations.DataGenerators.{FourierBasisGaussianProcessFunction, FourierBasisGaussianProcessGenerator, Friedman1Generator}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
+import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row}
@@ -66,7 +67,7 @@ object ExecuteDistributedSimulation {
         case "--threshold2" :: value :: tail =>
           nextOption(map ++ Map('threshold2 -> value.toDouble), tail)
         case "--nValid" :: value :: tail =>
-          nextOption(map ++ Map('nValid -> value.toDouble), tail)
+          nextOption(map ++ Map('nValid -> value.toInt), tail)
 
         case option :: tail => System.err.println("Unknown option "+option)
           System.err.println(usage)
@@ -79,11 +80,13 @@ object ExecuteDistributedSimulation {
     }
     def castInt(value: Any) : Int = value match {
       case x: Int => x
+      case x: Double => x.toInt
       case _ => System.err.println("invalid parameter: " + value)
         sys.exit(1)
     }
     def castDouble(value: Any) : Double = value match {
       case x: Double => x
+      case x: Int => x.toDouble
       case _ => System.err.println("invalid parameter: " + value)
         sys.exit(1)
     }
@@ -157,6 +160,7 @@ object ExecuteDistributedSimulation {
       seed => dataGenerator.generateData(
         nPointsPerPartition, 3.0, new scala.util.Random(seed)))
 
+    //TODO:   import org.apache.spark.mllib.feature.StandardScaler scale columns
     //normalize the labels
     trainingDataRDD.persist()
     val nTrain = trainingDataRDD.count()
@@ -167,6 +171,7 @@ object ExecuteDistributedSimulation {
     val stdTrainingDataRDD = trainingDataRDD.map(point => new LabeledPoint((point.label-trMean)/trStdev, point.features))
     trainingDataRDD.unpersist()
     val forceTrainingData = stdTrainingDataRDD.count()
+    val trainingMean = stdTrainingDataRDD.map(x => x.label).sum/forceTrainingData
     stdTrainingDataRDD.persist()
 
 
@@ -194,7 +199,7 @@ object ExecuteDistributedSimulation {
     //  map(point => (point.features, point.label)).unzip
 
     //normalize the labels
-
+    val predictionsMean = testPredictors.map(x => trainingMean)
     val testLocRegStart = System.currentTimeMillis
     val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, nPnnsPerPartition, batchSize)
@@ -292,6 +297,8 @@ object ExecuteDistributedSimulation {
       System.out.println("Correlation is " +
         EvaluationMetrics.correlation(predictions, testLabels))
     }
+
+    val meanRMSE = EvaluationMetrics.rmse(predictionsMean, testLabels)
     val siloRMSE = EvaluationMetrics.rmse(predictionsLocalRegression, testLabels)
     val siloCorr = EvaluationMetrics.correlation(predictionsLocalRegression, testLabels)
     val featImpSiloRMSE = EvaluationMetrics.rmse(predictionsActiveSet, testLabels)
@@ -348,17 +355,33 @@ object ExecuteDistributedSimulation {
         + simulationName + "," + nPartitions + "," + nPointsPerPartition + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","
         + minNodeSize + "," + globalMinNodeSize + "," + fit.getActiveSet().length)
     }
+    def printImportant = {
+      println(
+      "Simulation Name: "+simulationName +
+        " nPartitions: "+nPartitions +
+        " nPointsPerPartition: "+nPointsPerPartition +
+        " nTest: "+nTest +
+        " nActive: "+nActive +
+        " nInactive: "+nInactive
+      )
+    }
     def printRMSEs = {
-      println("RMSE,"+siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","+ globalOracleRMSE + ","+ siloOracle1RMSE + ","+ siloOracle2RMSE)
+      println("RMSE,"+siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","+ globalOracleRMSE + ","+ siloOracle1RMSE + ","+ siloOracle2RMSE+ ","+ meanRMSE)
     }
     //printStuff
     //printFormat
-    printFeat
+    //printFeat
+    printImportant
     printFormatted
     printRMSEs
 
 
     sc.cancelAllJobs()
     sc.stop()
+  }
+
+  def createLabeledPoint(line: String) : LabeledPoint = {
+    val tokens = line.split(",").map(_.toDouble)
+    return new LabeledPoint(tokens.last, Vectors.dense(tokens.dropRight(1)))
   }
 }

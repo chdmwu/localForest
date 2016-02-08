@@ -45,10 +45,6 @@ object DistributedForest {
     forests.map(_.getFeatureImportance()).collect.reduce(_ + _)
   }
 
-  def createLabeledPoint(line: String) : LabeledPoint = {
-    val tokens = line.split(",").map(_.toDouble)
-    return new LabeledPoint(tokens.last, Vectors.dense(tokens.dropRight(1)))
-  }
 
   // TODO(adam): consider making this RDD[IndexedSeq[LabeledPoint]]
   // TODO(adam): make it so you can specify size of resample

@@ -2,7 +2,7 @@ package edu.berkeley.statistics.Simulations.SimulationsExecutors
 
 import edu.berkeley.statistics.DistributedForest.DistributedForest
 import edu.berkeley.statistics.SerialForest.{FeatureImportance, RandomForestParameters, TreeParameters, RandomForest}
-import edu.berkeley.statistics.Simulations.DataGenerators.{FourierBasisGaussianProcessFunction, FourierBasisGaussianProcessGenerator, Friedman1Generator}
+import edu.berkeley.statistics.Simulations.DataGenerators.{DataReader, FourierBasisGaussianProcessFunction, FourierBasisGaussianProcessGenerator, Friedman1Generator}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
@@ -78,18 +78,7 @@ object ExecuteDistributedSimulation {
       case -1 => defaultArgs(name)
       case _ => args(name)
     }
-    def castInt(value: Any) : Int = value match {
-      case x: Int => x
-      case x: Double => x.toInt
-      case _ => System.err.println("invalid parameter: " + value)
-        sys.exit(1)
-    }
-    def castDouble(value: Any) : Double = value match {
-      case x: Double => x
-      case x: Int => x.toDouble
-      case _ => System.err.println("invalid parameter: " + value)
-        sys.exit(1)
-    }
+
     val defaultArgs = Map('simulationName -> "Friedman1", 'nPartitions ->4, 'nPointsPerPartition ->2500, 'nPnnsPerPartition ->1000,
       'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'sampleWithReplacement -> 1
       , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000).withDefaultValue(-1);
@@ -104,8 +93,9 @@ object ExecuteDistributedSimulation {
         System.err.println("Warning: nBasis only applicable to GaussianProcess dataset, user supplied nBasis ignored.")
       }
     }
-
-    val simulationName = getArg(options, defaultArgs, 'simulationName)
+    //set parameters
+    //println("Setting parameters")
+    val simulationName = getArg(options, defaultArgs, 'simulationName).toString()
     val nPartitions = castInt(getArg(options, defaultArgs, 'nPartitions))
     val nPointsPerPartition = castInt(getArg(options, defaultArgs, 'nPointsPerPartition))
     val nPnnsPerPartition = castInt(getArg(options, defaultArgs, 'nPnnsPerPartition))
@@ -128,96 +118,50 @@ object ExecuteDistributedSimulation {
     val threshold1 = castDouble(getArg(options, defaultArgs, 'threshold1))
     val threshold2 = castDouble(getArg(options, defaultArgs, 'threshold2))
     val nValid = castInt(getArg(options, defaultArgs, 'nValid))
+    val normalizeLabel = true; //TODO change this
+    val forestParameters = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, minNodeSize))
 
 
-    //System.out.println("Generating the data")
-    // Generate the random seeds for simulating data
-    val seeds = Array.fill(nPartitions)(scala.util.Random.nextLong())
-
-    // Parallelize the seeds
-    val seedsRDD = sc.parallelize(seeds, nPartitions)
-    var d = -1;
-    val rfparams = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, minNodeSize))
     // Generate the data
-    val (dataGenerator, forestParameters) = simulationName match {
-      case "Friedman1" => {
-        d = 5 + nInactive
-        (Friedman1Generator(nInactive), rfparams)
-      }
-      case "GaussianProcess" => {
-        d = nActive + nInactive
-        val function = FourierBasisGaussianProcessFunction.getFunction(
-          nActive, nBasis, 0.05, new scala.util.Random(2015L))
-        val generator = new FourierBasisGaussianProcessGenerator(function, nInactive)
-        (generator, rfparams)
-      }
-      case other => {
-        throw new IllegalArgumentException("Unknown simulation name: " + simulationName)
-      }
-    }
-
-    val trainingDataRDD = seedsRDD.flatMap(
-      seed => dataGenerator.generateData(
-        nPointsPerPartition, 3.0, new scala.util.Random(seed)))
-
-    //TODO:   import org.apache.spark.mllib.feature.StandardScaler scale columns
-    //normalize the labels
+    //println("Generating data")
+    val (trainingDataRDD, validData, testData) = DataReader.getData(sc,simulationName,nPartitions,nPointsPerPartition,nValid,nTest,nActive,nInactive,nBasis,normalizeLabel)
     trainingDataRDD.persist()
-    val nTrain = trainingDataRDD.count()
-    val trMean = trainingDataRDD.map(point => point.label).sum/nTrain
-    val trVariance = trainingDataRDD.map(point => Math.pow(point.label - trMean, 2)).sum / nTrain
-    val trStdev = Math.sqrt(trVariance)
+    val validPredictors = validData.map(x => x.features)
+    val validLabels = validData.map(x => x.label)
+    val testPredictors = testData.map(x => x.features)
+    val testLabels = testData.map(x => x.label)
+    val nFeatures = testPredictors(0).size
+    val trainingMean = trainingDataRDD.map(x => x.label).sum / trainingDataRDD.count
 
-    val stdTrainingDataRDD = trainingDataRDD.map(point => new LabeledPoint((point.label-trMean)/trStdev, point.features))
-    trainingDataRDD.unpersist()
-    val forceTrainingData = stdTrainingDataRDD.count()
-    val trainingMean = stdTrainingDataRDD.map(x => x.label).sum/forceTrainingData
-    stdTrainingDataRDD.persist()
-
-
-     //Train the forests
-    //System.out.println("Training forests")
-    val forests = DistributedForest.train(stdTrainingDataRDD, forestParameters)
-
-
-    // Persist the forests in memory
+    //Train the forests
+    //println("Training Forests")
+    val forests = DistributedForest.train(trainingDataRDD, forestParameters)
     forests.persist()
     val rfTrainStart = System.currentTimeMillis
     val forceRFTraining = forests.count
     val rfTrainTime = (System.currentTimeMillis - rfTrainStart) * 1e-3
 
+    //Get the feature importances
     val fit = DistributedForest.getFeatureImportance(forests)
 
-    // Get the predictions
-    //System.out.println("Training local models and getting predictions")
-    val (testPredictors, testLabels) = dataGenerator.
-      generateData(nTest, 0.0, scala.util.Random).
-      map(point => (point.features, (point.label-trMean)/trStdev)).unzip
-    val (validPredictors, validLabels) = dataGenerator.
-      generateData(nValid, 0.0, scala.util.Random).
-      map(point => (point.features, (point.label-trMean)/trStdev)).unzip
-    //  map(point => (point.features, point.label)).unzip
+    //Get the predictions
 
-    //normalize the labels
+    //println("Getting predictions")
+    //get mean prediction
     val predictionsMean = testPredictors.map(x => trainingMean)
+    //get SILO prediction
     val testLocRegStart = System.currentTimeMillis
     val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, nPnnsPerPartition, batchSize)
     val siloTestTime = (System.currentTimeMillis - testLocRegStart) * 1e-3
 
     //TODO: (Chris) get active set from the covariances of the full PNNs instead of dropping test points down forest 2x
-    /**
-    val activeSetStart = System.currentTimeMillis
-    val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
-      testPredictors, forests, nPnnsPerPartition, batchSize, fit.getActiveSet(threshold1, threshold2))
-    val featImpSiloTestTime = (System.currentTimeMillis - activeSetStart) * 1e-3
-  */
     def validateActiveSet() = {
       var bestRMSE = -1.0
       var bestActive = -1
       var bestCorr = -1.0
       var bestPredictions = IndexedSeq(0.0)
-      for(nActive <- 1 to d){
+      for(nActive <- 1 to nFeatures){
         val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
           validPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(nActive))
         val currRMSE = EvaluationMetrics.rmse(predictionsActiveSet, validLabels)
@@ -231,20 +175,21 @@ object ExecuteDistributedSimulation {
       }
       (bestRMSE, bestCorr, bestActive, bestPredictions)
     }
-
+    //get active set SILO prediction
+    //println("Validating")
     val activeSetStart = System.currentTimeMillis
     val (bestRMSE, bestCorr, bestActive, bestPredictions) = validateActiveSet()
     val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(bestActive))
     val featImpSiloTestTime = (System.currentTimeMillis - activeSetStart) * 1e-3
-
+    //get naive distributed RF prediction
     val testNaiveStart = System.currentTimeMillis
     val predictionsNaiveAveraging = DistributedForest.
       predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
     val naiveTestTime = (System.currentTimeMillis - testNaiveStart) * 1e-3
 
-
-
+    //println("Running Oracles/Global RF")
+    //Run global RF and oracles
     var globalTrainTime = -1.0
     var globalTestTime = -1.0
     var globalRMSE = -1.0
@@ -252,19 +197,21 @@ object ExecuteDistributedSimulation {
     var globalOracleRMSE = -1.0
     var siloOracle1RMSE = -1.0
     var siloOracle2RMSE = -1.0
-
     //Dont runGlobalRF with with huge datasets
     if(runOracle){
+      //println("Running silo oracle 2")
       val predictionsSiloOracle2 = DistributedForest.predictWithLocalRegressionBatch(
         testPredictors, forests, nPnnsPerPartition, batchSize, oracle)
       forests.unpersist()
-      val oracleData = stdTrainingDataRDD.map(x => FeatureImportance.getActiveFeatures(x, oracle))
-      stdTrainingDataRDD.unpersist()
+      val oracleData = trainingDataRDD.map(x => FeatureImportance.getActiveFeatures(x, oracle))
+      trainingDataRDD.unpersist()
       oracleData.persist()
       val forestParametersOracle = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(Math.ceil(oracle.length/3).toInt, minNodeSize))
+     // println("Running silo oracle 1")
       val forestsOracle1 = DistributedForest.train(oracleData, forestParametersOracle)
       val rfparamsGlobalOracle = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(Math.ceil(oracle.length/3).toInt, globalMinNodeSize))
       if(runGlobalRF){
+        //println("Running Global oracle 1")
         val globalRFOracle = RandomForest.train(oracleData.collect.toIndexedSeq, rfparamsGlobalOracle)
         val predictionsGlobalRFOracle = testPredictors.map(x => FeatureImportance.getActiveFeatures(x, oracle)).map(x => globalRFOracle.predict(x))
         globalOracleRMSE = EvaluationMetrics.rmse(predictionsGlobalRFOracle, testLabels)
@@ -276,7 +223,7 @@ object ExecuteDistributedSimulation {
       siloOracle2RMSE = EvaluationMetrics.rmse(predictionsSiloOracle2, testLabels)
     }
     if(runGlobalRF){
-      val trainingData = stdTrainingDataRDD.collect.toIndexedSeq
+      val trainingData = trainingDataRDD.collect.toIndexedSeq
       val globalTrainStart = System.currentTimeMillis
       val rfparamsGlobal = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, globalMinNodeSize))
       val globalRF = RandomForest.train(trainingData, rfparamsGlobal)
@@ -289,9 +236,6 @@ object ExecuteDistributedSimulation {
       globalCorr = EvaluationMetrics.correlation(predictionsGlobalRF, testLabels)
 
     }
-
-
-
     def printMetrics(predictions: IndexedSeq[Double]): Unit = {
       System.out.println("RMSE is " + EvaluationMetrics.rmse(predictions, testLabels))
       System.out.println("Correlation is " +
@@ -313,7 +257,7 @@ object ExecuteDistributedSimulation {
       System.out.println("Number of partitions: " + nPartitions)
       System.out.println("Number of training points per partition: " + nPointsPerPartition)
       System.out.println("Total Training Points: " + nPointsPerPartition * nPartitions)
-      System.out.println("dimensions: " + d)
+      //System.out.println("dimensions: " + d)
       System.out.println("Number of test points: " + nTest)
       System.out.println("Batch size: " + batchSize)
       System.out.println("Feature Importance Active Set: " + fit.getActiveSet(threshold1, threshold2))
@@ -380,8 +324,17 @@ object ExecuteDistributedSimulation {
     sc.stop()
   }
 
-  def createLabeledPoint(line: String) : LabeledPoint = {
-    val tokens = line.split(",").map(_.toDouble)
-    return new LabeledPoint(tokens.last, Vectors.dense(tokens.dropRight(1)))
+
+  def castInt(value: Any) : Int = value match {
+    case x: Int => x
+    case x: Double => x.toInt
+    case _ => System.err.println("invalid parameter: " + value)
+      sys.exit(1)
+  }
+  def castDouble(value: Any) : Double = value match {
+    case x: Double => x
+    case x: Int => x.toDouble
+    case _ => System.err.println("invalid parameter: " + value)
+      sys.exit(1)
   }
 }

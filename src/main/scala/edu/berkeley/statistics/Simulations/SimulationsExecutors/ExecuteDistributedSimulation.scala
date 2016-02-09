@@ -12,7 +12,7 @@ import scala.math.ceil
 
 object ExecuteDistributedSimulation {
   val usage =
-    """ExecuteDistributedSimulation --simulationName [name] --nPartitions [val] --nPointsPerPartition [val] --nPnnsPerPartition [val]
+    """ExecuteDistributedSimulation --simulationName [name] --nPartitions [val] --nTrain [val] --nPnnsPerPartition [val]
       |--nTest [val] --batchSize [val] --nActive [val] --nInactive [val] --nBasis [val] --ntree [val --mtry [val] --minNodeSize [val] --runGlobalRF [val]
       |--sampleWithReplacement [val]
     """.stripMargin
@@ -36,8 +36,8 @@ object ExecuteDistributedSimulation {
           nextOption(map ++ Map('simulationName -> value.toString), tail)
         case "--nPartitions" :: value :: tail =>
           nextOption(map ++ Map('nPartitions -> value.toInt), tail)
-        case "--nPointsPerPartition" :: value :: tail =>
-          nextOption(map ++ Map('nPointsPerPartition -> value.toInt), tail)
+        case "--nTrain" :: value :: tail =>
+          nextOption(map ++ Map('nTrain -> value.toInt), tail)
         case "--nPnnsPerPartition" :: value :: tail =>
           nextOption(map ++ Map('nPnnsPerPartition -> value.toInt), tail)
         case "--nTest" :: value :: tail =>
@@ -79,7 +79,7 @@ object ExecuteDistributedSimulation {
       case _ => args(name)
     }
 
-    val defaultArgs = Map('simulationName -> "Friedman1", 'nPartitions ->4, 'nPointsPerPartition ->2500, 'nPnnsPerPartition ->1000,
+    val defaultArgs = Map('simulationName -> "Friedman1", 'nPartitions ->4, 'nTrain ->2500, 'nPnnsPerPartition ->1000,
       'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'sampleWithReplacement -> 1
       , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000).withDefaultValue(-1);
     val options = nextOption(Map().withDefaultValue(-1),arglist)
@@ -97,7 +97,7 @@ object ExecuteDistributedSimulation {
     //println("Setting parameters")
     val simulationName = getArg(options, defaultArgs, 'simulationName).toString()
     val nPartitions = castInt(getArg(options, defaultArgs, 'nPartitions))
-    val nPointsPerPartition = castInt(getArg(options, defaultArgs, 'nPointsPerPartition))
+    val nTrain = castInt(getArg(options, defaultArgs, 'nTrain))
     val nPnnsPerPartition = castInt(getArg(options, defaultArgs, 'nPnnsPerPartition))
     val nTest = castInt(getArg(options, defaultArgs, 'nTest))
     val batchSize = castInt(getArg(options, defaultArgs, 'batchSize))
@@ -106,32 +106,39 @@ object ExecuteDistributedSimulation {
     val nBasis =  castInt(getArg(options, defaultArgs, 'nBasis))
     val ntree =  castInt(getArg(options, defaultArgs, 'ntree))
     val minNodeSize =  castInt(getArg(options, defaultArgs, 'minNodeSize))
-    val mtry =  castInt(getArg(options, defaultArgs, 'mtry) match {
-      case -1 => ceil((nActive + nInactive) / 3).toInt
-      case x => x
-    })
     val runGlobalRF = castInt(getArg(options, defaultArgs, 'runGlobalRF)) == 1
     val sampleWithReplacement = castInt(getArg(options, defaultArgs, 'sampleWithReplacement)) == 1
     val globalMinNodeSize = 10;
     val oracle = IndexedSeq.range(0,nActive)
-    val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1
+    val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1 && (simulationName == "Friedman1" || simulationName == "GaussianProcess")
     val threshold1 = castDouble(getArg(options, defaultArgs, 'threshold1))
     val threshold2 = castDouble(getArg(options, defaultArgs, 'threshold2))
     val nValid = castInt(getArg(options, defaultArgs, 'nValid))
     val normalizeLabel = true; //TODO change this
-    val forestParameters = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, minNodeSize))
+
 
 
     // Generate the data
     //println("Generating data")
-    val (trainingDataRDD, validData, testData) = DataReader.getData(sc,simulationName,nPartitions,nPointsPerPartition,nValid,nTest,nActive,nInactive,nBasis,normalizeLabel)
+    val (trainingDataRDD, validData, testData) = DataReader.getData(sc,simulationName,nPartitions,nTrain,nValid,nTest,nActive,nInactive,nBasis,normalizeLabel)
     trainingDataRDD.persist()
+
+
+
+
     val validPredictors = validData.map(x => x.features)
     val validLabels = validData.map(x => x.label)
     val testPredictors = testData.map(x => x.features)
     val testLabels = testData.map(x => x.label)
     val nFeatures = testPredictors(0).size
     val trainingMean = trainingDataRDD.map(x => x.label).sum / trainingDataRDD.count
+
+    val mtry =  castInt(getArg(options, defaultArgs, 'mtry) match {
+      case -1 => ceil(nFeatures.toDouble / 3).toInt
+      case x => x
+    })
+    println(mtry)
+    val forestParameters = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, minNodeSize))
 
     //Train the forests
     //println("Training Forests")
@@ -251,12 +258,12 @@ object ExecuteDistributedSimulation {
     val naiveCorr = EvaluationMetrics.correlation(predictionsNaiveAveraging, testLabels)
 
     def printStuff = {
-      println(simulationName + "," + nPartitions + "," + nPointsPerPartition + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","+ minNodeSize + ",")
+      println(simulationName + "," + nPartitions + "," + nTrain + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","+ minNodeSize + ",")
       println (options)
       System.out.println("Dataset: " + simulationName)
       System.out.println("Number of partitions: " + nPartitions)
-      System.out.println("Number of training points per partition: " + nPointsPerPartition)
-      System.out.println("Total Training Points: " + nPointsPerPartition * nPartitions)
+      System.out.println("Number of training points per partition: " + nTrain)
+      System.out.println("Total Training Points: " + nTrain * nPartitions)
       //System.out.println("dimensions: " + d)
       System.out.println("Number of test points: " + nTest)
       System.out.println("Batch size: " + batchSize)
@@ -289,21 +296,21 @@ object ExecuteDistributedSimulation {
       System.out.println("Top Feature Active Set: " + fit.getTopFeatures(bestActive))
     }
     def printFormat = {
-      println("siloRMSE,featImpSiloRMSE,naiveRMSE,siloCorr,featImpSiloCorr,naiveCorr,siloTestTime,featImpSiloTestTime,naiveTestTime,simulationName,nPartitions,nPointsPerPartition,nPnnsPerPartition,nTest,batchSize,nActive,nInactive," +
+      println("siloRMSE,featImpSiloRMSE,naiveRMSE,siloCorr,featImpSiloCorr,naiveCorr,siloTestTime,featImpSiloTestTime,naiveTestTime,simulationName,nPartitions,nTrain,nPnnsPerPartition,nTest,batchSize,nActive,nInactive," +
         "nBasis,mtry,ntree,minNodeSize")
     }
     def printFormatted = {
       println(siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","
         + siloCorr + "," + featImpSiloCorr + "," + naiveCorr + ","+ globalCorr + ","
         + siloTestTime + "," + featImpSiloTestTime + "," + naiveTestTime+ "," + rfTrainTime + "," + globalTrainTime + "," + globalTestTime + ","
-        + simulationName + "," + nPartitions + "," + nPointsPerPartition + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","
+        + simulationName + "," + nPartitions + "," + nTrain + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","
         + minNodeSize + "," + globalMinNodeSize + "," + fit.getActiveSet().length)
     }
     def printImportant = {
       println(
       "Simulation Name: "+simulationName +
         " nPartitions: "+nPartitions +
-        " nPointsPerPartition: "+nPointsPerPartition +
+        " nTrain: "+nTrain +
         " nTest: "+nTest +
         " nActive: "+nActive +
         " nInactive: "+nInactive

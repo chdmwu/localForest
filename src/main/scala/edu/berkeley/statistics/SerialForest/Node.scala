@@ -170,11 +170,24 @@ object Node {
       val pmean = labelValues.sum/labelValues.length
       val variance = labelValues.map(y => Math.pow(y-pmean,2)).sum/labelValues.length
 
-      fit.updateGain(bestVariable, (currNodeScore - bestScore));
+      if(bestVariable != -1){
+        fit.updateGain(bestVariable, (currNodeScore - bestScore))
+      } else {
+        //println(rowsHere.length)
+        //println(rowsHere.map(trainingData(_)))
+        //scoresAndSplits.map(x => println(x._1 + " " + x._2))
+        //println(candidateVars)
+        //println(treeParameters.mtry)
+        return makeLeafOrSplitRandomly //TODO: Chris Fix this hack somehow I guess
+      }
+
+
+
       //println(currNodeScore - bestScore)
       // No viable split is found, so make a leaf
       if (bestScore == currNodeScore) { //changed default behavior of Scorekeeper, no longer returns 0.0 on no split.
         return makeLeafOrSplitRandomly
+        //TODO: ADAM (from chris)  I dont know what this does but it doesnt work, crashes if no good split is found
       }
 
       val (leftIndices, rightIndices) = rowsHere.partition(

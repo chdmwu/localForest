@@ -8,7 +8,7 @@ import org.apache.spark.{SparkConf, SparkContext}
  * Created by christopher on 2/8/16.
  */
 object DataReader {
-  def getData(sc: SparkContext, simulationName: String, nPartitions: Int, nPointsPerPartition:Int, nValid: Int, nTest: Int, nActive: Int = 0, nInactive: Int = 0, nBasis:Int = 2500, normalizeLabel:Boolean = true):
+  def getData(sc: SparkContext, simulationName: String, nPartitions: Int, nTrain:Int, nValid: Int, nTest: Int, nActive: Int = 0, nInactive: Int = 0, nBasis:Int = 2500, normalizeLabel:Boolean = true, seed: Int = 333):
   (RDD[LabeledPoint], IndexedSeq[LabeledPoint],IndexedSeq[LabeledPoint]) =  {
     var d = -1;
     var (trainingDataRDD, validData, testData) = simulationName match {
@@ -19,7 +19,7 @@ object DataReader {
         val seedsRDD = sc.parallelize(seeds, nPartitions)
         val trainingDataRDD = seedsRDD.flatMap(
           seed => dataGenerator.generateData(
-            nPointsPerPartition, 3.0, new scala.util.Random(seed)))
+            nTrain/nPartitions, 3.0, new scala.util.Random(seed)))
         val validData = dataGenerator.
           generateData(nValid, 0.0, scala.util.Random)
         val testData = dataGenerator.
@@ -35,15 +35,27 @@ object DataReader {
         val seedsRDD = sc.parallelize(seeds, nPartitions)
         val trainingDataRDD = seedsRDD.flatMap(
           seed => dataGenerator.generateData(
-            nPointsPerPartition, 3.0, new scala.util.Random(seed)))
+            nTrain/nPartitions, 3.0, new scala.util.Random(seed)))
         val validData = dataGenerator.
           generateData(nValid, 0.0, scala.util.Random)
         val testData = dataGenerator.
           generateData(nTest, 0.0, scala.util.Random)
         (trainingDataRDD, validData, testData)
       }
+      case x => {
+        val dataRDD = sc.textFile(x, nPartitions).map(line => createLabeledPoint(line))
+        val totalPoints = nTrain + nValid + nTest
+        val trainFrac = nTrain.toDouble/totalPoints
+        val validFrac = nTrain.toDouble/totalPoints
+        val testFrac = nTrain.toDouble/totalPoints
+
+        val splitData = dataRDD.randomSplit(Array(trainFrac, validFrac, testFrac), seed)
+
+        //trainingDataRDD.
+        (splitData(0), splitData(1).collect().toIndexedSeq, splitData(2).collect().toIndexedSeq)
+      }
     }
-    val nTrain = trainingDataRDD.count()
+   // val nTrain = trainingDataRDD.count()
     val trMean = trainingDataRDD.map(point => point.label).sum/nTrain
     val trVariance = trainingDataRDD.map(point => Math.pow(point.label - trMean, 2)).sum / nTrain
     val trStdev = Math.sqrt(trVariance)

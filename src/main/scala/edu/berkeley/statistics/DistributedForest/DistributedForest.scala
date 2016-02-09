@@ -63,7 +63,7 @@ object DistributedForest {
     val predictions = Array.fill(testData.size)(0.0)
     var batchIndex = 0
     var currentIndex = 0
-
+    val totalPoints = testData.length
     val nCols = activeSet match {
       case null => testData(0).size + 1
       case _ => activeSet.length + 1
@@ -108,7 +108,8 @@ object DistributedForest {
       })
       // Fill the predictions
       // Ugh
-      (currentIndex until (currentIndex + batchSize)).foreach(i => {
+      val endIndex = Math.min(totalPoints, currentIndex+batchSize)
+      (currentIndex until (endIndex)).foreach(i => {
         predictions(i) = predictionsBatch(i - currentIndex)
       })
       batchIndex += 1
@@ -125,6 +126,7 @@ object DistributedForest {
     val predictions = Array.fill(testData.size)(0.0)
     var batchIndex = 0
     var currentIndex = 0
+    val totalPoints = testData.length
 
     while (batchIndex < batchData.length) {
       val testDataBroadcasted = forests.context.broadcast(batchData(batchIndex))
@@ -134,7 +136,8 @@ object DistributedForest {
       val predictionsBatch = testDataBroadcasted.value.indices.map(i => {
         forestPreds.map(_(i)).sum / forestPreds.size
       })
-      (currentIndex until (currentIndex + batchSize)).foreach(i => {
+      val endIndex = Math.min(totalPoints, currentIndex + batchSize)
+      (currentIndex until endIndex).foreach(i => {
         predictions(i) = predictionsBatch(i - currentIndex)
       })
       currentIndex = currentIndex + batchSize

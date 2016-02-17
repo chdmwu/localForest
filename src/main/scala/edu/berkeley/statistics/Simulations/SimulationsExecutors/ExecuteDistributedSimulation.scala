@@ -5,7 +5,7 @@ import edu.berkeley.statistics.SerialForest.{FeatureImportance, RandomForestPara
 import edu.berkeley.statistics.Simulations.DataGenerators.{DataReader, FourierBasisGaussianProcessFunction, FourierBasisGaussianProcessGenerator, Friedman1Generator}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
 import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.regression.{LassoWithSGD, LinearRegressionWithSGD, LabeledPoint}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row}
 import scala.math.ceil
@@ -56,6 +56,8 @@ object ExecuteDistributedSimulation {
           nextOption(map ++ Map('ntree -> value.toInt), tail)
         case "--minNodeSize" :: value :: tail =>
           nextOption(map ++ Map('minNodeSize -> value.toInt), tail)
+        case "--globalMinNodeSize" :: value :: tail =>
+          nextOption(map ++ Map('globalMinNodeSize -> value.toInt), tail)
         case "--runGlobalRF" :: value :: tail =>
           nextOption(map ++ Map('runGlobalRF -> value.toInt), tail)
         case "--runOracle" :: value :: tail =>
@@ -68,6 +70,10 @@ object ExecuteDistributedSimulation {
           nextOption(map ++ Map('threshold2 -> value.toDouble), tail)
         case "--nValid" :: value :: tail =>
           nextOption(map ++ Map('nValid -> value.toInt), tail)
+        case "--normalizeLabel" :: value :: tail =>
+          nextOption(map ++ Map('normalizeLabel -> value.toInt), tail)
+        case "--runLinear" :: value :: tail =>
+          nextOption(map ++ Map('runLinear -> value.toInt), tail)
 
         case option :: tail => System.err.println("Unknown option "+option)
           System.err.println(usage)
@@ -80,8 +86,8 @@ object ExecuteDistributedSimulation {
     }
 
     val defaultArgs = Map('simulationName -> "Friedman1", 'nPartitions ->4, 'nTrain ->2500, 'nPnnsPerPartition ->1000,
-      'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'sampleWithReplacement -> 1
-      , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000).withDefaultValue(-1);
+      'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'globalMinNodeSize -> 10, 'sampleWithReplacement -> 1
+      , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000, 'normalizeLabel -> 1, 'runLinear -> -1).withDefaultValue(-1);
     val options = nextOption(Map().withDefaultValue(-1),arglist)
     if(options('simulationName) == "Friedman1"){
       if(options('nActive) != -1 && options('nActive) != 5){
@@ -97,9 +103,10 @@ object ExecuteDistributedSimulation {
     //println("Setting parameters")
     val simulationName = getArg(options, defaultArgs, 'simulationName).toString()
     val nPartitions = castInt(getArg(options, defaultArgs, 'nPartitions))
-    val nTrain = castInt(getArg(options, defaultArgs, 'nTrain))
+    var nTrain = castInt(getArg(options, defaultArgs, 'nTrain))
+    var nValid = castInt(getArg(options, defaultArgs, 'nValid))
+    var nTest = castInt(getArg(options, defaultArgs, 'nTest))
     val nPnnsPerPartition = castInt(getArg(options, defaultArgs, 'nPnnsPerPartition))
-    val nTest = castInt(getArg(options, defaultArgs, 'nTest))
     val batchSize = castInt(getArg(options, defaultArgs, 'batchSize))
     val nActive = castInt(getArg(options, defaultArgs, 'nActive))
     val nInactive = castInt(getArg(options, defaultArgs, 'nInactive))
@@ -108,20 +115,26 @@ object ExecuteDistributedSimulation {
     val minNodeSize =  castInt(getArg(options, defaultArgs, 'minNodeSize))
     val runGlobalRF = castInt(getArg(options, defaultArgs, 'runGlobalRF)) == 1
     val sampleWithReplacement = castInt(getArg(options, defaultArgs, 'sampleWithReplacement)) == 1
-    val globalMinNodeSize = 10;
-    val oracle = IndexedSeq.range(0,nActive)
+    val globalMinNodeSize = castInt(getArg(options, defaultArgs, 'globalMinNodeSize))
     val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1 && (simulationName == "Friedman1" || simulationName == "GaussianProcess")
     val threshold1 = castDouble(getArg(options, defaultArgs, 'threshold1))
     val threshold2 = castDouble(getArg(options, defaultArgs, 'threshold2))
-    val nValid = castInt(getArg(options, defaultArgs, 'nValid))
-    val normalizeLabel = true; //TODO change this
+    val normalizeLabel = castInt(getArg(options, defaultArgs, 'normalizeLabel)) == 1;
+    val runLinear = castInt(getArg(options, defaultArgs, 'runLinear)) == 1;
 
-
+    val oracle = IndexedSeq.range(0,nActive)
 
     // Generate the data
     //println("Generating data")
     val (trainingDataRDD, validData, testData) = DataReader.getData(sc,simulationName,nPartitions,nTrain,nValid,nTest,nActive,nInactive,nBasis,normalizeLabel)
     trainingDataRDD.persist()
+    val realnPartitions = trainingDataRDD.partitions.size
+    assert(realnPartitions == nPartitions)
+    nTrain = trainingDataRDD.count().toInt
+    nValid = validData.length
+    nTest = testData.length
+
+
 
 
 
@@ -204,6 +217,43 @@ object ExecuteDistributedSimulation {
     var globalOracleRMSE = -1.0
     var siloOracle1RMSE = -1.0
     var siloOracle2RMSE = -1.0
+
+    var linearRMSE = -1.0
+    var lassoRMSE = -1.0
+    val numIterations = 600
+    val stepSize = 0.01
+    //val numIterations = 10000
+    if(runLinear){
+
+      val algorithm = new LinearRegressionWithSGD()
+      algorithm.setIntercept(true)
+      algorithm.optimizer
+        .setNumIterations(numIterations)
+        .setStepSize(stepSize)
+      val linModel = algorithm.run(trainingDataRDD)
+      val predictionsLinear = testPredictors.map { point =>  linModel.predict(point)}
+      linearRMSE = EvaluationMetrics.rmse(predictionsLinear, testLabels)
+      val lassoModel = LassoWithSGD.train(trainingDataRDD, numIterations)
+      val predictionsLasso = testPredictors.map { point =>  lassoModel.predict(point)}
+      lassoRMSE = EvaluationMetrics.rmse(predictionsLasso, testLabels)
+    }
+
+    if(runLinear){
+      val algorithm = new LassoWithSGD()
+      algorithm.setIntercept(true).setValidateData(true)
+      algorithm.optimizer
+        .setNumIterations(numIterations)
+        .setStepSize(stepSize)
+
+      val linModel = algorithm.run(trainingDataRDD)
+      val predictionsLinear = testPredictors.map { point =>  linModel.predict(point)}
+      linearRMSE = EvaluationMetrics.rmse(predictionsLinear, testLabels)
+      val lassoModel = LassoWithSGD.train(trainingDataRDD, numIterations)
+      val predictionsLasso = testPredictors.map { point =>  lassoModel.predict(point)}
+      lassoRMSE = EvaluationMetrics.rmse(predictionsLasso, testLabels)
+    }
+
+
     //Dont runGlobalRF with with huge datasets
     if(runOracle){
       //println("Running silo oracle 2")
@@ -211,7 +261,6 @@ object ExecuteDistributedSimulation {
         testPredictors, forests, nPnnsPerPartition, batchSize, oracle)
       forests.unpersist()
       val oracleData = trainingDataRDD.map(x => FeatureImportance.getActiveFeatures(x, oracle))
-      trainingDataRDD.unpersist()
       oracleData.persist()
       val forestParametersOracle = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(Math.ceil(oracle.length/3).toInt, minNodeSize))
      // println("Running silo oracle 1")
@@ -243,6 +292,8 @@ object ExecuteDistributedSimulation {
       globalCorr = EvaluationMetrics.correlation(predictionsGlobalRF, testLabels)
 
     }
+
+
     def printMetrics(predictions: IndexedSeq[Double]): Unit = {
       System.out.println("RMSE is " + EvaluationMetrics.rmse(predictions, testLabels))
       System.out.println("Correlation is " +
@@ -304,27 +355,40 @@ object ExecuteDistributedSimulation {
         + siloCorr + "," + featImpSiloCorr + "," + naiveCorr + ","+ globalCorr + ","
         + siloTestTime + "," + featImpSiloTestTime + "," + naiveTestTime+ "," + rfTrainTime + "," + globalTrainTime + "," + globalTestTime + ","
         + simulationName + "," + nPartitions + "," + nTrain + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","
-        + minNodeSize + "," + globalMinNodeSize + "," + fit.getActiveSet().length)
+        + minNodeSize + "," + globalMinNodeSize + "," + bestActive)
     }
     def printImportant = {
       println(
       "Simulation Name: "+simulationName +
         " nPartitions: "+nPartitions +
         " nTrain: "+nTrain +
+        " nValid: "+nValid +
         " nTest: "+nTest +
+        " nFeatures: " + nFeatures +
         " nActive: "+nActive +
-        " nInactive: "+nInactive
+        " nInactive: "+nInactive +
+        " Total Features: " + nFeatures +
+        " Number of Features Selected: " + bestActive
       )
+      System.out.println("Top Feature Active Set: " + fit.getTopFeatures(bestActive))
     }
     def printRMSEs = {
-      println("RMSE,"+siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","+ globalOracleRMSE + ","+ siloOracle1RMSE + ","+ siloOracle2RMSE+ ","+ meanRMSE)
+      println("SiloRMSE,FeatImpRMSE,NaiveRMSE,GlobalRMSE,GlobalOracle1RMSE,SiloOracle1RMSE,SiloOracle2RMSE,MeanRMSE,linearRMSE,lassoRMSE")
+      println(siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","+ globalOracleRMSE + ","+ siloOracle1RMSE + ","+ siloOracle2RMSE+ ","+ meanRMSE+ ","+ linearRMSE+ ","+ lassoRMSE)
+    }
+    def printRunTimes = {
+      println("rfTrainTime,globalTrainTime,siloTestTime,featImpSiloTestTime,naiveTestTime,globalTestTime")
+      println(rfTrainTime + "," + globalTrainTime + "," + siloTestTime + ","+ featImpSiloTestTime + ","+ naiveTestTime + ","+ globalTestTime)
+
     }
     //printStuff
     //printFormat
     //printFeat
     printImportant
-    printFormatted
+   // printFormatted
+    printRunTimes
     printRMSEs
+
 
 
     sc.cancelAllJobs()

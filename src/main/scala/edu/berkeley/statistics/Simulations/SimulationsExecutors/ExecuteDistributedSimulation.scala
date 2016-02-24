@@ -368,6 +368,8 @@ object ExecuteDistributedSimulation {
         " nActive: "+nActive +
         " nInactive: "+nInactive +
         " Total Features: " + nFeatures +
+        " MinNodeSize: " + minNodeSize +
+        " GlobalMinNodeSize: " + globalMinNodeSize +
         " Number of Features Selected: " + bestActive
       )
       System.out.println("Top Feature Active Set: " + fit.getTopFeatures(bestActive))

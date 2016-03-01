@@ -12,7 +12,7 @@ import scala.math.ceil
 
 object ExecuteDistributedSimulation {
   val usage =
-    """ExecuteDistributedSimulation --simulationName [name] --nPartitions [val] --nTrain [val] --nPnnsPerPartition [val]
+    """ExecuteDistributedSimulation --trainFile [name] --nPartitions [val] --nTrain [val] --nPnnsPerPartition [val]
       |--nTest [val] --batchSize [val] --nActive [val] --nInactive [val] --nBasis [val] --ntree [val --mtry [val] --minNodeSize [val] --runGlobalRF [val]
       |--sampleWithReplacement [val]
     """.stripMargin
@@ -32,8 +32,12 @@ object ExecuteDistributedSimulation {
     def nextOption(map : OptionMap, list: List[String]) : OptionMap = {
       list match {
         case Nil => map
-        case "--simulationName" :: value :: tail =>
-          nextOption(map ++ Map('simulationName -> value.toString), tail)
+        case "--trainFile" :: value :: tail =>
+          nextOption(map ++ Map('trainFile -> value.toString), tail)
+        case "--validFile" :: value :: tail =>
+          nextOption(map ++ Map('validFile -> value.toString), tail)
+        case "--testFile" :: value :: tail =>
+          nextOption(map ++ Map('testFile -> value.toString), tail)
         case "--nPartitions" :: value :: tail =>
           nextOption(map ++ Map('nPartitions -> value.toInt), tail)
         case "--nTrain" :: value :: tail =>
@@ -64,10 +68,6 @@ object ExecuteDistributedSimulation {
           nextOption(map ++ Map('runOracle -> value.toInt), tail)
         case "--sampleWithReplacement" :: value :: tail =>
           nextOption(map ++ Map('sampleWithReplacement -> value.toInt), tail)
-        case "--threshold1" :: value :: tail =>
-          nextOption(map ++ Map('threshold1 -> value.toDouble), tail)
-        case "--threshold2" :: value :: tail =>
-          nextOption(map ++ Map('threshold2 -> value.toDouble), tail)
         case "--nValid" :: value :: tail =>
           nextOption(map ++ Map('nValid -> value.toInt), tail)
         case "--normalizeLabel" :: value :: tail =>
@@ -85,23 +85,16 @@ object ExecuteDistributedSimulation {
       case _ => args(name)
     }
 
-    val defaultArgs = Map('simulationName -> "Friedman1", 'nPartitions ->4, 'nTrain ->2500, 'nPnnsPerPartition ->1000,
+    val defaultArgs = Map('trainFile -> "Friedman1",'validFile -> "",'testFile -> "", 'nPartitions ->4, 'nTrain ->2500, 'nPnnsPerPartition ->1000,
       'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'globalMinNodeSize -> 10, 'sampleWithReplacement -> 1
       , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000, 'normalizeLabel -> 1, 'runLinear -> -1).withDefaultValue(-1);
     val options = nextOption(Map().withDefaultValue(-1),arglist)
-    if(options('simulationName) == "Friedman1"){
-      if(options('nActive) != -1 && options('nActive) != 5){
-        System.err.println("Warning: Friedman1 has 5 active dimensions, user supplied nActive ignored.")
-      }
-    }
-    if(options('simulationName) != "GaussianProcess"){
-      if(options('nBasis) != -1){
-        System.err.println("Warning: nBasis only applicable to GaussianProcess dataset, user supplied nBasis ignored.")
-      }
-    }
+
     //set parameters
     //println("Setting parameters")
-    val simulationName = getArg(options, defaultArgs, 'simulationName).toString()
+    val trainFile = getArg(options, defaultArgs, 'trainFile).toString()
+    val validFile = getArg(options, defaultArgs, 'validFile).toString()
+    val testFile = getArg(options, defaultArgs, 'testFile).toString()
     val nPartitions = castInt(getArg(options, defaultArgs, 'nPartitions))
     var nTrain = castInt(getArg(options, defaultArgs, 'nTrain))
     var nValid = castInt(getArg(options, defaultArgs, 'nValid))
@@ -116,9 +109,7 @@ object ExecuteDistributedSimulation {
     val runGlobalRF = castInt(getArg(options, defaultArgs, 'runGlobalRF)) == 1
     val sampleWithReplacement = castInt(getArg(options, defaultArgs, 'sampleWithReplacement)) == 1
     val globalMinNodeSize = castInt(getArg(options, defaultArgs, 'globalMinNodeSize))
-    val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1 && (simulationName == "Friedman1" || simulationName == "GaussianProcess")
-    val threshold1 = castDouble(getArg(options, defaultArgs, 'threshold1))
-    val threshold2 = castDouble(getArg(options, defaultArgs, 'threshold2))
+    val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1 && (trainFile == "Friedman1" || trainFile == "GaussianProcess")
     val normalizeLabel = castInt(getArg(options, defaultArgs, 'normalizeLabel)) == 1;
     val runLinear = castInt(getArg(options, defaultArgs, 'runLinear)) == 1;
 
@@ -126,7 +117,7 @@ object ExecuteDistributedSimulation {
 
     // Generate the data
     //println("Generating data")
-    val (trainingDataRDD, validData, testData) = DataReader.getData(sc,simulationName,nPartitions,nTrain,nValid,nTest,nActive,nInactive,nBasis,normalizeLabel)
+    val (trainingDataRDD, validData, testData) = DataReader.getData(sc,trainFile,nPartitions,nTrain,nValid,nTest,validFile,testFile,nActive,nInactive,nBasis,normalizeLabel)
     trainingDataRDD.persist()
     val realnPartitions = trainingDataRDD.partitions.size
     assert(realnPartitions == nPartitions)
@@ -220,7 +211,7 @@ object ExecuteDistributedSimulation {
 
     var linearRMSE = -1.0
     var lassoRMSE = -1.0
-    val numIterations = 600
+    val numIterations = 300
     val stepSize = 0.01
     //val numIterations = 10000
     if(runLinear){
@@ -309,16 +300,15 @@ object ExecuteDistributedSimulation {
     val naiveCorr = EvaluationMetrics.correlation(predictionsNaiveAveraging, testLabels)
 
     def printStuff = {
-      println(simulationName + "," + nPartitions + "," + nTrain + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","+ minNodeSize + ",")
+      println(trainFile + "," + nPartitions + "," + nTrain + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","+ minNodeSize + ",")
       println (options)
-      System.out.println("Dataset: " + simulationName)
+      System.out.println("Dataset: " + trainFile)
       System.out.println("Number of partitions: " + nPartitions)
       System.out.println("Number of training points per partition: " + nTrain)
       System.out.println("Total Training Points: " + nTrain * nPartitions)
       //System.out.println("dimensions: " + d)
       System.out.println("Number of test points: " + nTest)
       System.out.println("Batch size: " + batchSize)
-      System.out.println("Feature Importance Active Set: " + fit.getActiveSet(threshold1, threshold2))
       System.out.println("Feature Importance Values: " + fit.getAvgImportance)
       System.out.println("Feature Importance Sum: " + fit.getSplitGains)
       System.out.println("Feature Importance Num: " + fit.getNumberOfSplits)
@@ -338,11 +328,9 @@ object ExecuteDistributedSimulation {
       System.out.println("Test time, naive averaging: " + naiveTestTime)
     }
     def printFeat = {
-      System.out.println("Feature Importance Thresholds: " + threshold1 + " " + threshold2)
       System.out.println("Feature Importance Values: " + fit.getAvgImportance)
       System.out.println("Feature Importance Sum: " + fit.getSplitGains)
       System.out.println("Feature Importance Num: " + fit.getNumberOfSplits)
-      System.out.println("Feature Importance Active Set: " + fit.getActiveSet(threshold1, threshold2))
       System.out.println("Top Feature Active Set Number: " + bestActive)
       System.out.println("Top Feature Active Set: " + fit.getTopFeatures(bestActive))
     }
@@ -354,12 +342,12 @@ object ExecuteDistributedSimulation {
       println(siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","
         + siloCorr + "," + featImpSiloCorr + "," + naiveCorr + ","+ globalCorr + ","
         + siloTestTime + "," + featImpSiloTestTime + "," + naiveTestTime+ "," + rfTrainTime + "," + globalTrainTime + "," + globalTestTime + ","
-        + simulationName + "," + nPartitions + "," + nTrain + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","
+        + trainFile + "," + nPartitions + "," + nTrain + "," + nPnnsPerPartition + "," + nTest + "," + batchSize + "," + nActive + "," + nInactive + "," + nBasis + "," + mtry + ","+ ntree + ","
         + minNodeSize + "," + globalMinNodeSize + "," + bestActive)
     }
     def printImportant = {
       println(
-      "Simulation Name: "+simulationName +
+      "trainFile Name: "+trainFile +
         " nPartitions: "+nPartitions +
         " nTrain: "+nTrain +
         " nValid: "+nValid +
@@ -383,6 +371,11 @@ object ExecuteDistributedSimulation {
       println(rfTrainTime + "," + globalTrainTime + "," + siloTestTime + ","+ featImpSiloTestTime + ","+ naiveTestTime + ","+ globalTestTime)
 
     }
+    def printForMatlab = {
+      println("nFeatures,bestActive,SiloRMSE,FeatImpRMSE,NaiveRMSE,GlobalRMSE,MeanRMSE,LinearRMSE,LassoRMSE")
+      println(nFeatures+ "," + bestActive + "," + siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + "," + meanRMSE+ ","+ linearRMSE+ ","+ lassoRMSE)
+
+    }
     //printStuff
     //printFormat
     //printFeat
@@ -390,6 +383,7 @@ object ExecuteDistributedSimulation {
    // printFormatted
     printRunTimes
     printRMSEs
+    printForMatlab
 
 
 

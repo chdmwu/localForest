@@ -3,7 +3,7 @@ package edu.berkeley.statistics.LocalModels
 import breeze.linalg.{DenseMatrix, DenseVector}
 import org.apache.spark.mllib.linalg.{Vector => mllibVector}
 import org.apache.spark.mllib.regression.LabeledPoint
-
+//TODO: Deal with singular covariance matrices
 object WeightedLinearRegression {
   def getBetaHat(covMatrices: IndexedSeq[DenseMatrix[Double]],
                     crossCovArrays: IndexedSeq[DenseVector[Double]]): DenseVector[Double] = {

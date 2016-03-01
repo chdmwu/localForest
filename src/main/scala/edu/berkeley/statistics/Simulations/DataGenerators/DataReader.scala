@@ -8,8 +8,12 @@ import org.apache.spark.{SparkConf, SparkContext}
 /**
  * Created by christopher on 2/8/16.
  */
+
+//TODO GET RID OF NTRAIN NVALID NTEST ASAP
+
+
 object DataReader {
-  def getData(sc: SparkContext, trainFile: String, nPartitions: Int, nTrain:Int, nValid: Int, nTest: Int, validFile:String = "", testFile:String = "", nActive: Int = 0, nInactive: Int = 0, nBasis:Int = 2500, normalizeLabel:Boolean = true, normalizeFeatures:Boolean = true, seed: Int = 333):
+  def getData(sc: SparkContext, trainFile: String, nPartitions: Int, nTrain:Int, nValid: Int, nTest: Int, validFile:String = "", testFile:String = "", nActive: Int = 0, nInactive: Int = 0, nBasis:Int = 2500, normalizeLabel:Boolean , normalizeFeatures:Boolean, seed: Int = 333):
   (RDD[LabeledPoint], IndexedSeq[LabeledPoint],IndexedSeq[LabeledPoint]) =  {
     var d = -1;
     val noisesd = 1.0
@@ -82,8 +86,10 @@ object DataReader {
       }
     }
    // val nTrain = trainingDataRDD.count()
-    val trMean = trainingDataRDD.map(point => point.label).sum/nTrain
-    val trVariance = trainingDataRDD.map(point => Math.pow(point.label - trMean, 2)).sum / nTrain
+    /**
+    val true_nTrain = trainingDataRDD.count
+    val trMean = trainingDataRDD.map(point => point.label).sum/ true_nTrain
+    val trVariance = trainingDataRDD.map(point => Math.pow(point.label - trMean, 2)).sum / true_nTrain
     val trStdev = Math.sqrt(trVariance)
     if(normalizeLabel){
       trainingDataRDD = trainingDataRDD.map(point => new LabeledPoint((point.label-trMean)/trStdev, point.features))
@@ -96,7 +102,7 @@ object DataReader {
       validData = validData.map(point => new LabeledPoint(point.label, scaler.transform(point.features)))
       testData = testData.map(point => new LabeledPoint(point.label, scaler.transform(point.features)))
     }
-
+  */
     (trainingDataRDD, validData, testData)
   }
   def createLabeledPoint(line: String) : LabeledPoint = {

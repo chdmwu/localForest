@@ -72,8 +72,12 @@ object ExecuteDistributedSimulation {
           nextOption(map ++ Map('nValid -> value.toInt), tail)
         case "--normalizeLabel" :: value :: tail =>
           nextOption(map ++ Map('normalizeLabel -> value.toInt), tail)
+        case "--normalizeFeatures" :: value :: tail =>
+          nextOption(map ++ Map('normalizeFeatures -> value.toInt), tail)
         case "--runLinear" :: value :: tail =>
           nextOption(map ++ Map('runLinear -> value.toInt), tail)
+        case "--debug" :: value :: tail =>
+          nextOption(map ++ Map('debug -> value.toInt), tail)
 
         case option :: tail => System.err.println("Unknown option "+option)
           System.err.println(usage)
@@ -87,7 +91,7 @@ object ExecuteDistributedSimulation {
 
     val defaultArgs = Map('trainFile -> "Friedman1",'validFile -> "",'testFile -> "", 'nPartitions ->4, 'nTrain ->2500, 'nPnnsPerPartition ->1000,
       'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'globalMinNodeSize -> 10, 'sampleWithReplacement -> 1
-      , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000, 'normalizeLabel -> 1, 'runLinear -> -1).withDefaultValue(-1);
+      , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000, 'normalizeLabel -> 1, 'normalizeFeatures -> 1, 'runLinear -> -1, 'debug -> -1).withDefaultValue(-1);
     val options = nextOption(Map().withDefaultValue(-1),arglist)
 
     //set parameters
@@ -111,13 +115,22 @@ object ExecuteDistributedSimulation {
     val globalMinNodeSize = castInt(getArg(options, defaultArgs, 'globalMinNodeSize))
     val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1 && (trainFile == "Friedman1" || trainFile == "GaussianProcess")
     val normalizeLabel = castInt(getArg(options, defaultArgs, 'normalizeLabel)) == 1;
+    val normalizeFeatures = castInt(getArg(options, defaultArgs, 'normalizeFeatures)) == 1;
     val runLinear = castInt(getArg(options, defaultArgs, 'runLinear)) == 1;
+    val debug = castInt(getArg(options, defaultArgs, 'debug)) == 1;
+
+    def printlnd(x:Any) = {
+      debug match {
+        case true => println(x)
+        case _ =>
+      }
+    }
 
     val oracle = IndexedSeq.range(0,nActive)
 
     // Generate the data
     //println("Generating data")
-    val (trainingDataRDD, validData, testData) = DataReader.getData(sc,trainFile,nPartitions,nTrain,nValid,nTest,validFile,testFile,nActive,nInactive,nBasis,normalizeLabel)
+    val (trainingDataRDD, validData, testData) = DataReader.getData(sc,trainFile,nPartitions,nTrain,nValid,nTest,validFile,testFile,nActive,nInactive,nBasis,normalizeLabel,normalizeFeatures)
     trainingDataRDD.persist()
     val realnPartitions = trainingDataRDD.partitions.size
     assert(realnPartitions == nPartitions)
@@ -160,6 +173,10 @@ object ExecuteDistributedSimulation {
     //println("Getting predictions")
     //get mean prediction
     val predictionsMean = testPredictors.map(x => trainingMean)
+    printlnd("mean")
+    printlnd(trainingMean)
+    printlnd("truelabels")
+    printlnd(testLabels)
     //get SILO prediction
     val testLocRegStart = System.currentTimeMillis
     val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
@@ -290,7 +307,8 @@ object ExecuteDistributedSimulation {
       System.out.println("Correlation is " +
         EvaluationMetrics.correlation(predictions, testLabels))
     }
-
+    printlnd("rfPred")
+    printlnd(predictionsLocalRegression)
     val meanRMSE = EvaluationMetrics.rmse(predictionsMean, testLabels)
     val siloRMSE = EvaluationMetrics.rmse(predictionsLocalRegression, testLabels)
     val siloCorr = EvaluationMetrics.correlation(predictionsLocalRegression, testLabels)

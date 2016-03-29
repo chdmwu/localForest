@@ -80,6 +80,10 @@ object ExecuteDistributedSimulation {
       case "GaussianProcess" => {
         val numActiveDimensions = args(incrementArgIndex).toInt
         val numInactiveDimensions = args(incrementArgIndex).toInt
+        val numTrees = args(incrementArgIndex).toInt
+        val maxDepth = args(incrementArgIndex).toInt
+        System.out.println("Number of trees: " + numTrees)
+        System.out.println("MaxDepth: " + maxDepth)
         d = numActiveDimensions + numInactiveDimensions
         val numBasisFunctions =
           if (args.length > argIndex) args(incrementArgIndex).toInt
@@ -88,8 +92,8 @@ object ExecuteDistributedSimulation {
           numActiveDimensions, numBasisFunctions, 0.05, new scala.util.Random(2015L))
         val generator = new FourierBasisGaussianProcessGenerator(function, numInactiveDimensions)
         (generator, RandomForestParameters(
-          100, true, TreeParameters(
-            floor((numActiveDimensions + numInactiveDimensions) / 3).toInt, 10)))
+          numTrees, true, TreeParameters(
+            floor((numActiveDimensions + numInactiveDimensions) / 3).toInt, maxDepth)))
       }
       case other => {
         throw new IllegalArgumentException("Unknown simulation name: " + simulationName)

@@ -38,7 +38,7 @@ object Node {
   // This will find the split point and do the splitting into child nodes
   def createNode(rowsHere: IndexedSeq[Int], treeParameters: TreeParameters,
                  trainingData: IndexedSeq[LabeledPoint],
-                 rng: scala.util.Random): Node = {
+                 rng: scala.util.Random, fit: FeatureImportance): Node = {
 
 
     if (rowsHere.length <= treeParameters.nodeSize) {
@@ -72,8 +72,8 @@ object Node {
             }
             LeafNode(rowsHere, trainingData)
           } else {
-            InternalNode(Node.createNode(idcsLeft, treeParameters, trainingData, rng),
-              Node.createNode(idcsRight, treeParameters, trainingData, rng), splitVar,
+            InternalNode(Node.createNode(idcsLeft, treeParameters, trainingData, rng, fit),
+              Node.createNode(idcsRight, treeParameters, trainingData, rng, fit), splitVar,
               splitPoint)
           }
         } else {
@@ -88,6 +88,7 @@ object Node {
 
       // Create initialized scoreKeeper
       val scoreKeeper: AnovaScoreKeeper = new AnovaScoreKeeper(yValsAtNode)
+      val currNodeScore = scoreKeeper.getCurrentScore()
 
       // Function to get score and split point for a feature
       // TODO(adam): convert to using some and none for non-feasible variables?
@@ -95,6 +96,7 @@ object Node {
 
         // Copy out the values of the column in this node
         val predictorValues = rowsHere.map(trainingData(_).features(featureIndex))
+
         // Get the indices of the sorted set of predictors
         // val predictorIndices = predictorValues.indices.sortBy(predictorValues(_))
 
@@ -137,6 +139,7 @@ object Node {
         })
 
 
+
         if (!foundPredictorVariation) {
           (0.0, 0.0)
         } else {
@@ -163,9 +166,28 @@ object Node {
           }
         )
 
+      val labelValues = rowsHere.map(trainingData(_).label)
+      val pmean = labelValues.sum/labelValues.length
+      val variance = labelValues.map(y => Math.pow(y-pmean,2)).sum/labelValues.length
+
+      if(bestVariable != -1){
+        fit.updateGain(bestVariable, (currNodeScore - bestScore))
+      } else {
+        //println(rowsHere.length)
+        //println(rowsHere.map(trainingData(_)))
+        //scoresAndSplits.map(x => println(x._1 + " " + x._2))
+        //println(candidateVars)
+        //println(treeParameters.mtry)
+        return makeLeafOrSplitRandomly //TODO: Chris Fix this hack somehow I guess
+      }
+
+
+
+      //println(currNodeScore - bestScore)
       // No viable split is found, so make a leaf
-      if (bestScore == 0.0) {
+      if (bestScore == currNodeScore) { //changed default behavior of Scorekeeper, no longer returns 0.0 on no split.
         return makeLeafOrSplitRandomly
+        //TODO: ADAM (from chris)  I dont know what this does but it doesnt work, crashes if no good split is found
       }
 
       val (leftIndices, rightIndices) = rowsHere.partition(
@@ -175,8 +197,8 @@ object Node {
         return makeLeafOrSplitRandomly
       }
 
-      InternalNode(Node.createNode(leftIndices, treeParameters, trainingData, rng),
-        Node.createNode(rightIndices, treeParameters, trainingData, rng), bestVariable,
+      InternalNode(Node.createNode(leftIndices, treeParameters, trainingData, rng, fit),
+        Node.createNode(rightIndices, treeParameters, trainingData, rng, fit), bestVariable,
         bestSplit)
     }
   }

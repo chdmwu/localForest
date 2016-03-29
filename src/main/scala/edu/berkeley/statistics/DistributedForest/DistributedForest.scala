@@ -2,7 +2,8 @@ package edu.berkeley.statistics.DistributedForest
 
 import breeze.linalg.{DenseMatrix, DenseVector}
 import edu.berkeley.statistics.LocalModels.WeightedLinearRegression
-import edu.berkeley.statistics.SerialForest.{RandomForest, RandomForestParameters}
+import edu.berkeley.statistics.SerialForest.{FeatureImportance, RandomForest, RandomForestParameters}
+
 import org.apache.spark.mllib.linalg.{Vector => mllibVector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.rdd.RDD
@@ -15,8 +16,10 @@ import org.apache.spark.{SparkConf, SparkContext}
  * Reads headerless csvs for training and testing data, assumes the last column is the response variable.
  */
 object DistributedForest {
+  /**
   val nPartitions = 5
   val numIterations = 100
+
   def main(args: Array[String]) = {
     var trainFile = "/home/christopher/train.csv"
     var testFile = "/home/christopher/test.csv"
@@ -34,12 +37,14 @@ object DistributedForest {
     val trainData = sc.textFile(trainFile,nPartitions).map(createLabeledPoint)
     //printList(trainData.take(5))
     //val randomForests = train(trainData)
+  } */
+
+  def getFeatureImportance(forests: RDD[RandomForest]) =  {
+    //forests.map(_.getFeatureImportance).reduce(_ + _).getActiveSet
+    //forests.count()
+    forests.map(_.getFeatureImportance()).collect.reduce(_ + _)
   }
 
-  def createLabeledPoint(line: String) : LabeledPoint = {
-    val tokens = line.split(",").map(_.toDouble)
-    return new LabeledPoint(tokens.last, Vectors.dense(tokens.dropRight(1)))
-  }
 
   // TODO(adam): consider making this RDD[IndexedSeq[LabeledPoint]]
   // TODO(adam): make it so you can specify size of resample
@@ -52,20 +57,31 @@ object DistributedForest {
 
   def predictWithLocalRegressionBatch(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
                                           numPNNsPerPartition: Int,
-                                          batchSize: Int): IndexedSeq[Double] = {
+                                          batchSize: Int, activeSet: IndexedSeq[Int] = null): IndexedSeq[Double] = {
     val batchData = testData.grouped(batchSize).toIndexedSeq //group into batches
+    //val batchActiveData = testData.map(x => FeatureImportance.getActiveFeatures(x, activeSet)).grouped(batchSize).toIndexedSeq
     val predictions = Array.fill(testData.size)(0.0)
     var batchIndex = 0
     var currentIndex = 0
-
-    val nCols = testData(0).size + 1
+    val totalPoints = testData.length
+    val nCols = activeSet match {
+      case null => testData(0).size + 1
+      case _ => activeSet.length + 1
+    }
 
     while (batchIndex < batchData.length) {
       val testDataBroadcasted = forests.context.broadcast(batchData(batchIndex))
       val covMatsForestsRaw = forests.map((f: RandomForest) => {
+        //val pnnsAndWeights = testDataBroadcasted.value.map(
+        //  f.getTopPNNsAndWeights(_, numPNNsPerPartition))
+
         val pnnsAndWeights = testDataBroadcasted.value.map(
-          f.getTopPNNsAndWeights(_, numPNNsPerPartition))
-        val pnnsWeightsAndTestPoint = pnnsAndWeights.zip(testDataBroadcasted.value)
+          f.getTopPNNsAndWeights(_, numPNNsPerPartition, activeSet))
+
+        //val pnnsWeightsAndTestPoint = pnnsAndWeights.zip(testDataBroadcasted.value)
+        val pnnsWeightsAndTestPoint = pnnsAndWeights.zip(testDataBroadcasted.value.map(
+          mllibVec => FeatureImportance.getActiveFeatures(mllibVec, activeSet))
+        )
         val outputMatrices = pnnsWeightsAndTestPoint.map(x =>
           WeightedLinearRegression.getCovarianceMatrix(x._1, x._2))
         val outputArrays: IndexedSeq[(Array[Double], Array[Double])] = outputMatrices.map{
@@ -83,6 +99,7 @@ object DistributedForest {
         }
       })
 
+      // val predictionsBatch: IndexedSeq[Double] = batchActiveData(batchIndex).indices.map((i: Int) => {
       val predictionsBatch: IndexedSeq[Double] = batchData(batchIndex).indices.map((i: Int) => {
         val (partitionCovMats, partitionCrossCovs) = covMatsForests.map(_(i)).unzip
         val betaHat: DenseVector[Double] =
@@ -91,7 +108,8 @@ object DistributedForest {
       })
       // Fill the predictions
       // Ugh
-      (currentIndex until (currentIndex + batchSize)).foreach(i => {
+      val endIndex = Math.min(totalPoints, currentIndex+batchSize)
+      (currentIndex until (endIndex)).foreach(i => {
         predictions(i) = predictionsBatch(i - currentIndex)
       })
       batchIndex += 1
@@ -108,6 +126,7 @@ object DistributedForest {
     val predictions = Array.fill(testData.size)(0.0)
     var batchIndex = 0
     var currentIndex = 0
+    val totalPoints = testData.length
 
     while (batchIndex < batchData.length) {
       val testDataBroadcasted = forests.context.broadcast(batchData(batchIndex))
@@ -117,7 +136,8 @@ object DistributedForest {
       val predictionsBatch = testDataBroadcasted.value.indices.map(i => {
         forestPreds.map(_(i)).sum / forestPreds.size
       })
-      (currentIndex until (currentIndex + batchSize)).foreach(i => {
+      val endIndex = Math.min(totalPoints, currentIndex + batchSize)
+      (currentIndex until endIndex).foreach(i => {
         predictions(i) = predictionsBatch(i - currentIndex)
       })
       currentIndex = currentIndex + batchSize

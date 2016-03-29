@@ -1,6 +1,6 @@
 package edu.berkeley.statistics.SerialForest
 
-import org.apache.spark.mllib.linalg.{Vector => mllibVector}
+import org.apache.spark.mllib.linalg.{Vector => mllibVector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
 
 class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) extends Serializable {
@@ -24,10 +24,12 @@ class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) ex
     }
   }
 
-  def getTopPNNsAndWeights(testPoint: mllibVector, numPNNs: Int): IndexedSeq[(LabeledPoint, Double)] = {
+  def getTopPNNsAndWeights(testPoint: mllibVector, numPNNs: Int, activeSet: IndexedSeq[Int] = null): IndexedSeq[(LabeledPoint, Double)] = {
     this.getTopPNNIndicesAndWeights(testPoint, numPNNs).map{
-      case (index: Int, weight: Double) => (trainingData(index), weight)}
+      case (index: Int, weight: Double) => (FeatureImportance.getActiveFeatures(trainingData(index), activeSet), weight)}
   }
+
+
 
   def getTopPNNsAndWeightsBatch(testPoints: IndexedSeq[mllibVector], numPNNs: Int): List[IndexedSeq[(LabeledPoint, Double)]] = {
     testPoints.map(getTopPNNsAndWeights(_, numPNNs)).toList
@@ -35,6 +37,10 @@ class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) ex
 
   def predict(testPoint: mllibVector): Double = {
     trees.map(_.predict(testPoint)).sum / trees.length
+  }
+  def getFeatureImportance(): FeatureImportance = {
+    //println(trees.map(_.featureImportance.getNumberOfSplits(0)).sum)
+    trees.map(_.featureImportance).reduce(_ + _)
   }
 }
 

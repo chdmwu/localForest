@@ -13,6 +13,8 @@ case class Friedman1Generator(numNonsensePredictors: Int) extends SimulationData
       val outcome = 10 * sin(Pi * features(0) * features(1)) +
           20 * pow(features(2) - 0.5, 2) +
           10 * features(3) + 5 * features(4) + rng.nextGaussian * noiseSd
+     /** val outcome = 4*features(0) + 2*features(1) + 8*features(2)+
+        10 * features(3) + 5 * features(4) + rng.nextGaussian * noiseSd*/
       new LabeledPoint(outcome, Vectors.dense(features))
     }
     IndexedSeq.fill(numObservations)(getSingleObservation)

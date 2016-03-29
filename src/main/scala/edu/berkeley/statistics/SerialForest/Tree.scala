@@ -3,7 +3,9 @@ package edu.berkeley.statistics.SerialForest
 import org.apache.spark.mllib.linalg.{Vector => mllibVector}
 import org.apache.spark.mllib.regression.LabeledPoint
 
-class Tree private (head: Node) extends Serializable {
+class Tree private (head: Node, fit: FeatureImportance) extends Serializable {
+
+  val featureImportance = fit
   private def getTerminalNode(testPoint: mllibVector): LeafNode = {
     var currentNode: Node = head
     while (true) {
@@ -36,7 +38,12 @@ object Tree {
   def train(indices: IndexedSeq[Int],
             trainingData: IndexedSeq[LabeledPoint], treeParameters: TreeParameters,
             randomSeed: Long): Tree = {
+    val fit = trainingData.length match {
+      case 0 => new FeatureImportance(0)
+      case _ => new FeatureImportance(trainingData(0).features.size)
+    }
+
     new Tree(Node.createNode(indices,
-      treeParameters, trainingData, new scala.util.Random(randomSeed)))
+      treeParameters, trainingData, new scala.util.Random(randomSeed), fit), fit)
   }
 }

@@ -6,9 +6,12 @@ import edu.berkeley.statistics.Simulations.DataGenerators.{DataReader, FourierBa
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.{LassoWithSGD, LinearRegressionWithSGD, LabeledPoint}
+import org.apache.spark.mllib.tree.configuration.Strategy
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row}
+import scala.collection.mutable.ListBuffer
 import scala.math.ceil
+import org.apache.spark.mllib.tree.{RandomForest => mllibRF} //rename mllib's RandomForest
 
 object ExecuteDistributedSimulation {
   val usage =
@@ -76,6 +79,14 @@ object ExecuteDistributedSimulation {
           nextOption(map ++ Map('normalizeFeatures -> value.toInt), tail)
         case "--runLinear" :: value :: tail =>
           nextOption(map ++ Map('runLinear -> value.toInt), tail)
+        case "--runMllib" :: value :: tail =>
+          nextOption(map ++ Map('runMllib -> value.toInt), tail)
+        case "--mllibMaxDepth" :: value :: tail =>
+          nextOption(map ++ Map('mllibMaxDepth -> value.toInt), tail)
+        case "--mllibBins" :: value :: tail =>
+          nextOption(map ++ Map('mllibBins -> value.toInt), tail)
+        case "--mllibMinNodeSize" :: value :: tail =>
+          nextOption(map ++ Map('mllibMinNodeSize -> value.toInt), tail)
         case "--debug" :: value :: tail =>
           nextOption(map ++ Map('debug -> value.toInt), tail)
 
@@ -91,7 +102,8 @@ object ExecuteDistributedSimulation {
 
     val defaultArgs = Map('trainFile -> "Friedman1",'validFile -> "",'testFile -> "", 'nPartitions ->4, 'nTrain ->2500, 'nPnnsPerPartition ->1000,
       'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'globalMinNodeSize -> 10, 'sampleWithReplacement -> 1
-      , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000, 'normalizeLabel -> 1, 'normalizeFeatures -> 1, 'runLinear -> -1, 'debug -> -1).withDefaultValue(-1);
+      , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000, 'normalizeLabel -> 1, 'normalizeFeatures -> 1, 'runLinear -> -1, 'debug -> -1,
+    'runMllib -> -1, 'mllibMaxDepth -> 10,'mllibBins -> 32,'mllibMinNodeSize -> 10).withDefaultValue(-1);
     val options = nextOption(Map().withDefaultValue(-1),arglist)
 
     //set parameters
@@ -117,6 +129,10 @@ object ExecuteDistributedSimulation {
     val normalizeLabel = castInt(getArg(options, defaultArgs, 'normalizeLabel)) == 1;
     val normalizeFeatures = castInt(getArg(options, defaultArgs, 'normalizeFeatures)) == 1;
     val runLinear = castInt(getArg(options, defaultArgs, 'runLinear)) == 1;
+    val runMllib = castInt(getArg(options, defaultArgs, 'runMllib)) == 1;
+    val mllibMaxDepth = castInt(getArg(options, defaultArgs, 'mllibMaxDepth));
+    val mllibBins = castInt(getArg(options, defaultArgs, 'mllibBins));
+    val mllibMinNodeSize = castInt(getArg(options, defaultArgs, 'mllibMinNodeSize));
     val debug = castInt(getArg(options, defaultArgs, 'debug)) == 1;
 
     def printlnd(x:Any) = {
@@ -154,11 +170,11 @@ object ExecuteDistributedSimulation {
       case -1 => ceil(nFeatures.toDouble / 3).toInt
       case x => x
     })
-    println(mtry)
+    //println(mtry)
     val forestParameters = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, minNodeSize))
 
     //Train the forests
-    //println("Training Forests")
+    printlnd("Training Forests")
     val forests = DistributedForest.train(trainingDataRDD, forestParameters)
     forests.persist()
     val rfTrainStart = System.currentTimeMillis
@@ -170,29 +186,30 @@ object ExecuteDistributedSimulation {
 
     //Get the predictions
 
-    //println("Getting predictions")
+    printlnd("Getting predictions")
     //get mean prediction
     val predictionsMean = testPredictors.map(x => trainingMean)
-    printlnd("mean")
-    printlnd(trainingMean)
-    printlnd("truelabels")
-    printlnd(testLabels)
+    //printlnd("mean")
+    //printlnd(trainingMean)
+    //printlnd("truelabels")
+    //printlnd(testLabels)
     //get SILO prediction
     val testLocRegStart = System.currentTimeMillis
     val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, nPnnsPerPartition, batchSize)
     val siloTestTime = (System.currentTimeMillis - testLocRegStart) * 1e-3
 
-    //TODO: (Chris) get active set from the covariances of the full PNNs instead of dropping test points down forest 2x
-    def validateActiveSet() = {
+    /**def validateActiveSet() = {
       var bestRMSE = -1.0
       var bestActive = -1
       var bestCorr = -1.0
+      var rmses = ListBuffer[Double]()
       var bestPredictions = IndexedSeq(0.0)
       for(nActive <- 1 to nFeatures){
         val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
           validPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(nActive))
         val currRMSE = EvaluationMetrics.rmse(predictionsActiveSet, validLabels)
+        rmses += currRMSE
         val currCorr = EvaluationMetrics.correlation(predictionsActiveSet, validLabels)
         if(bestRMSE < 0 || currRMSE < bestRMSE){
           bestRMSE = currRMSE
@@ -201,12 +218,26 @@ object ExecuteDistributedSimulation {
           bestPredictions = predictionsActiveSet
         }
       }
+      printlnd("best rmse1:")
+      printlnd(bestRMSE)
+      printlnd(rmses)
       (bestRMSE, bestCorr, bestActive, bestPredictions)
+    }*/
+    def validateActiveSet() = {
+      val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatchValidate(validPredictors, forests, nPnnsPerPartition, batchSize, fit)
+      val rmses = predictionsActiveSet.map(predictions => EvaluationMetrics.rmse(predictions, validLabels))
+      val bestActive = rmses.zip(1 to nFeatures).minBy(_._1)._2
+      val bestRMSE = rmses.min
+      printlnd("best rmse:")
+      printlnd(bestRMSE)
+      println(rmses)
+      bestActive
     }
     //get active set SILO prediction
-    //println("Validating")
+    printlnd("Validating")
     val activeSetStart = System.currentTimeMillis
-    val (bestRMSE, bestCorr, bestActive, bestPredictions) = validateActiveSet()
+    val bestActive = validateActiveSet()
+    printlnd("Testing")
     val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(bestActive))
     val featImpSiloTestTime = (System.currentTimeMillis - activeSetStart) * 1e-3
@@ -225,6 +256,12 @@ object ExecuteDistributedSimulation {
     var globalOracleRMSE = -1.0
     var siloOracle1RMSE = -1.0
     var siloOracle2RMSE = -1.0
+    var mllibTrainTime = -1.0
+    var mllibTestTime = -1.0
+    var mllibRMSE = -1.0
+    var mllibCorr = -1.0
+
+
 
     var linearRMSE = -1.0
     var lassoRMSE = -1.0
@@ -232,7 +269,7 @@ object ExecuteDistributedSimulation {
     val stepSize = 0.01
     //val numIterations = 10000
     if(runLinear){
-
+      printlnd("Running Linear Regression")
       val algorithm = new LinearRegressionWithSGD()
       algorithm.setIntercept(true)
       algorithm.optimizer
@@ -247,6 +284,7 @@ object ExecuteDistributedSimulation {
     }
 
     if(runLinear){
+      printlnd("Running Lasso Regression")
       val algorithm = new LassoWithSGD()
       algorithm.setIntercept(true).setValidateData(true)
       algorithm.optimizer
@@ -264,6 +302,7 @@ object ExecuteDistributedSimulation {
 
     //Dont runGlobalRF with with huge datasets
     if(runOracle){
+      printlnd("Running Oracle")
       //println("Running silo oracle 2")
       val predictionsSiloOracle2 = DistributedForest.predictWithLocalRegressionBatch(
         testPredictors, forests, nPnnsPerPartition, batchSize, oracle)
@@ -287,6 +326,7 @@ object ExecuteDistributedSimulation {
       siloOracle2RMSE = EvaluationMetrics.rmse(predictionsSiloOracle2, testLabels)
     }
     if(runGlobalRF){
+      printlnd("Running Global RF")
       val trainingData = trainingDataRDD.collect.toIndexedSeq
       val globalTrainStart = System.currentTimeMillis
       val rfparamsGlobal = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, globalMinNodeSize))
@@ -300,6 +340,23 @@ object ExecuteDistributedSimulation {
       globalCorr = EvaluationMetrics.correlation(predictionsGlobalRF, testLabels)
 
     }
+    if(runMllib){
+      val treeStrategy = Strategy.defaultStrategy("Regression")
+      treeStrategy.setMinInstancesPerNode(mllibMinNodeSize)
+      treeStrategy.setMaxDepth(mllibMaxDepth)
+      treeStrategy.setMaxBins(mllibBins)
+      val featureSubsetStrategy = "auto" // Let the algorithm choose.
+      val rfTrainStart = System.currentTimeMillis
+      val model = mllibRF.trainRegressor(trainingDataRDD,
+        treeStrategy, ntree, featureSubsetStrategy, seed = 12345)
+      mllibTrainTime = (System.currentTimeMillis - rfTrainStart)* 1e-3
+
+      val mllibStart = System.currentTimeMillis
+      val mllibPredictions = testPredictors.map(model.predict(_))
+      mllibTestTime = System.currentTimeMillis - mllibStart
+      mllibRMSE = EvaluationMetrics.rmse(mllibPredictions, testLabels)
+      mllibCorr = EvaluationMetrics.correlation(mllibPredictions, testLabels)
+    }
 
 
     def printMetrics(predictions: IndexedSeq[Double]): Unit = {
@@ -307,8 +364,8 @@ object ExecuteDistributedSimulation {
       System.out.println("Correlation is " +
         EvaluationMetrics.correlation(predictions, testLabels))
     }
-    printlnd("rfPred")
-    printlnd(predictionsLocalRegression)
+    //printlnd("rfPred")
+    //printlnd(predictionsLocalRegression)
     val meanRMSE = EvaluationMetrics.rmse(predictionsMean, testLabels)
     val siloRMSE = EvaluationMetrics.rmse(predictionsLocalRegression, testLabels)
     val siloCorr = EvaluationMetrics.correlation(predictionsLocalRegression, testLabels)
@@ -390,9 +447,13 @@ object ExecuteDistributedSimulation {
 
     }
     def printForMatlab = {
-      println("nFeatures,bestActive,SiloRMSE,FeatImpRMSE,NaiveRMSE,GlobalRMSE,MeanRMSE,LinearRMSE,LassoRMSE")
-      println(nFeatures+ "," + bestActive + "," + siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + "," + meanRMSE+ ","+ linearRMSE+ ","+ lassoRMSE)
+      println("nFeatures,bestActive,SiloRMSE,FeatImpRMSE,NaiveRMSE,GlobalRMSE,MeanRMSE,LinearRMSE,LassoRMSE,mllibRMSE")
+      println(nFeatures+ "," + bestActive + "," + siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + "," + meanRMSE+ ","+ linearRMSE+ ","+ lassoRMSE+ ","+ mllibRMSE)
 
+    }
+    def printMllib = {
+      println("mllibMinNodeSize,mllibMaxDepth,mllibBins,mllibTrainTime,mllibTestTime")
+      println(mllibMinNodeSize+ "," + mllibMaxDepth + "," + mllibBins+ "," + mllibTrainTime + "," + mllibTestTime)
     }
     //printStuff
     //printFormat
@@ -402,6 +463,9 @@ object ExecuteDistributedSimulation {
     printRunTimes
     printRMSEs
     printForMatlab
+    if(runMllib){
+      printMllib
+    }
 
 
 

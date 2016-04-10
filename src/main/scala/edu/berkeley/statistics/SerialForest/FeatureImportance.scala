@@ -1,4 +1,7 @@
 package edu.berkeley.statistics.SerialForest
+
+import breeze.linalg.{DenseVector, DenseMatrix}
+
 import scala.collection._
 import org.apache.spark.mllib.linalg.{Vector => mllibVector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
@@ -68,6 +71,10 @@ class FeatureImportance (nFeatures: Int) extends Serializable {
     }
     getSplitGains.zipWithIndex.sortWith(_._1 > _._1).take(n).map(_._2).sorted
   }
+
+  def getSortedFeatures: IndexedSeq[Int] = {
+    getSplitGains.zipWithIndex.sortWith(_._1 > _._1).map(_._2)
+  }
 }
 
 object FeatureImportance {
@@ -83,4 +90,6 @@ object FeatureImportance {
       case _ => Vectors.dense(activeSet.collect(point.toArray).toArray)
     }
   }
+
+
 }

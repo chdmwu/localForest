@@ -17,7 +17,8 @@ object DataReader {
   (RDD[LabeledPoint], IndexedSeq[LabeledPoint],IndexedSeq[LabeledPoint]) =  {
     var d = -1;
     val noisesd = 1.0
-    var (trainingDataRDD, validData, testData) = trainFile match {
+    //var (trainingDataRDD, validData, testData) = trainFile match {
+    val (trainingDataRDD, validData, testData) = trainFile match {
       case "Friedman1" => {
         d = 5 + nInactive
         val dataGenerator = Friedman1Generator(nInactive)
@@ -65,6 +66,7 @@ object DataReader {
         (trainingDataRDD, validData, testData)
       }
       case x => (testFile.length,validFile.length) match{
+        //if no validation and test file are given, we split the training file
         case (0,0) => {
           val dataRDD = sc.textFile(x, nPartitions*3).map(line => createLabeledPoint(line))//a hack to read into nPartitions
           val totalPoints = nTrain + nValid + nTest
@@ -77,6 +79,7 @@ object DataReader {
           //trainingDataRDD.
           (splitData(0).coalesce(nPartitions), splitData(1).collect().toIndexedSeq, splitData(2).collect().toIndexedSeq)//a hack to read into nPartitions
         }
+          // if we are given valid and test files
         case y => {
           val train = sc.textFile(trainFile, nPartitions).map(line => createLabeledPoint(line))
           val valid = sc.textFile(validFile).map(line => createLabeledPoint(line)).collect().toIndexedSeq

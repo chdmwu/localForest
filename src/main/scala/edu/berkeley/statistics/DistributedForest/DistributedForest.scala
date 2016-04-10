@@ -9,6 +9,9 @@ import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
+import scala.collection.immutable
+import scala.collection.mutable.ListBuffer
+
 
 /**
  * Creates a distributed localforest.
@@ -104,7 +107,7 @@ object DistributedForest {
         val (partitionCovMats, partitionCrossCovs) = covMatsForests.map(_(i)).unzip
         val betaHat: DenseVector[Double] =
           WeightedLinearRegression.getBetaHat(partitionCovMats, partitionCrossCovs)
-        betaHat(0)
+        betaHat(-1)
       })
       // Fill the predictions
       // Ugh
@@ -144,5 +147,81 @@ object DistributedForest {
       batchIndex = batchIndex + 1
     }
     predictions
+  }
+
+
+  def predictWithLocalRegressionBatchValidate(testData: IndexedSeq[mllibVector], forests: RDD[RandomForest],
+                                      numPNNsPerPartition: Int,
+                                      batchSize: Int, fit: FeatureImportance): IndexedSeq[IndexedSeq[Double]] = {
+    val batchData = testData.grouped(batchSize).toIndexedSeq //group into batches
+    //val batchActiveData = testData.map(x => FeatureImportance.getActiveFeatures(x, activeSet)).grouped(batchSize).toIndexedSeq
+    //val predictions = Array.fill(testData.size)(IndexedSeq[Double])
+    var predictions = new ListBuffer[IndexedSeq[Double]]()
+    var batchIndex = 0
+    var currentIndex = 0
+    val totalPoints = testData.length
+    val nCols = testData(0).size + 1
+    val nFeatures = testData(0).size
+
+    while (batchIndex < batchData.length) {
+      val testDataBroadcasted = forests.context.broadcast(batchData(batchIndex))
+      val covMatsForestsRaw = forests.map((f: RandomForest) => {
+        //val pnnsAndWeights = testDataBroadcasted.value.map(
+        //  f.getTopPNNsAndWeights(_, numPNNsPerPartition))
+
+        val pnnsAndWeights = testDataBroadcasted.value.map(
+          f.getTopPNNsAndWeights(_, numPNNsPerPartition))
+
+        val pnnsWeightsAndTestPoint = pnnsAndWeights.zip(testDataBroadcasted.value)
+
+        val outputMatrices = pnnsWeightsAndTestPoint.map(x =>
+          WeightedLinearRegression.getCovarianceMatrix(x._1, x._2))
+        val outputArrays: IndexedSeq[(Array[Double], Array[Double])] = outputMatrices.map{
+          case (covMat: DenseMatrix[Double], crossCovVec: DenseVector[Double]) => {
+            (covMat.valuesIterator.toArray, crossCovVec.valuesIterator.toArray)
+          }
+        }
+        outputArrays
+      }).collect
+
+      val covMatsForests = covMatsForestsRaw.map(_.map{
+        case (covMatRaw: Array[Double], crossCovVecRaw: Array[Double]) => {
+          (new DenseMatrix[Double](nCols, nCols, covMatRaw),
+            new DenseVector[Double](crossCovVecRaw))
+        }
+      })
+
+      // val predictionsBatch: IndexedSeq[Double] = batchActiveData(batchIndex).indices.map((i: Int) => {
+      val predictionsBatch: IndexedSeq[IndexedSeq[Double]] = batchData(batchIndex).indices.map((i: Int) => {
+        val (partitionCovMats, partitionCrossCovs) = covMatsForests.map(_(i)).unzip
+        val (covMat, crossCov) = WeightedLinearRegression.getFullMatrices(partitionCovMats, partitionCrossCovs)
+
+        (1 to nFeatures).map(
+          nActive => {
+            val (newMat, newVec) = WeightedLinearRegression.reduceCov(covMat, crossCov, fit.getTopFeatures(nActive))
+            val betaHat = WeightedLinearRegression.getBetaHat(newMat, newVec)
+            betaHat(-1)
+          }
+        )
+
+      })
+      // Fill the predictions
+      // Ugh
+      /**
+      val endIndex = Math.min(totalPoints, currentIndex+batchSize)
+      (currentIndex until (endIndex)).foreach(i => {
+        predictions(i) = predictionsBatch(i - currentIndex)
+      })
+      */
+      predictionsBatch.foreach{
+        predictions += _
+      }
+
+      batchIndex += 1
+      currentIndex += batchSize
+    }
+
+    // Is this terrible?
+    predictions.toIndexedSeq.transpose
   }
 }

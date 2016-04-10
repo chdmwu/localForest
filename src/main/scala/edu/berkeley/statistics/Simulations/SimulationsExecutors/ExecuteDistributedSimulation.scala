@@ -28,6 +28,7 @@ object ExecuteDistributedSimulation {
 
     // For large simulations, may have to edit /usr/local/etc/sbtopts on MacOS if using sbt
     // or add --executor-memory XXG commandline option if using spark-submit
+
     if (args.length == 0) println(usage)
     val arglist = args.toList
     type OptionMap = Map[Symbol, Any]
@@ -93,6 +94,7 @@ object ExecuteDistributedSimulation {
         case option :: tail => System.err.println("Unknown option "+option)
           System.err.println(usage)
           sys.exit(1)
+>>>>>>> eaefc69a0edb168ec63d586c597ef769b86baa5a
       }
     }
     def getArg(args: Map[Symbol, Any], defaultArgs: Map[Symbol, Any], name: Symbol) : Any = args(name) match {

@@ -10,7 +10,7 @@ import org.apache.spark.mllib.tree.configuration.Strategy
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row}
 import scala.collection.mutable.ListBuffer
-import scala.math.ceil
+import scala.math._
 import org.apache.spark.mllib.tree.{RandomForest => mllibRF} //rename mllib's RandomForest
 
 object ExecuteDistributedSimulation {
@@ -94,7 +94,6 @@ object ExecuteDistributedSimulation {
         case option :: tail => System.err.println("Unknown option "+option)
           System.err.println(usage)
           sys.exit(1)
->>>>>>> eaefc69a0edb168ec63d586c597ef769b86baa5a
       }
     }
     def getArg(args: Map[Symbol, Any], defaultArgs: Map[Symbol, Any], name: Symbol) : Any = args(name) match {
@@ -127,7 +126,7 @@ object ExecuteDistributedSimulation {
     val runGlobalRF = castInt(getArg(options, defaultArgs, 'runGlobalRF)) == 1
     val sampleWithReplacement = castInt(getArg(options, defaultArgs, 'sampleWithReplacement)) == 1
     val globalMinNodeSize = castInt(getArg(options, defaultArgs, 'globalMinNodeSize))
-    val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1 && (trainFile == "Friedman1" || trainFile == "GaussianProcess")
+    val runOracle = castInt(getArg(options, defaultArgs, 'runOracle)) == 1 //&& (trainFile == "Friedman1" || trainFile == "GaussianProcess")
     val normalizeLabel = castInt(getArg(options, defaultArgs, 'normalizeLabel)) == 1;
     val normalizeFeatures = castInt(getArg(options, defaultArgs, 'normalizeFeatures)) == 1;
     val runLinear = castInt(getArg(options, defaultArgs, 'runLinear)) == 1;
@@ -149,6 +148,10 @@ object ExecuteDistributedSimulation {
     // Generate the data
     //println("Generating data")
     val (trainingDataRDD, validData, testData) = DataReader.getData(sc,trainFile,nPartitions,nTrain,nValid,nTest,validFile,testFile,nActive,nInactive,nBasis,normalizeLabel,normalizeFeatures)
+
+
+
+
     trainingDataRDD.persist()
     val realnPartitions = trainingDataRDD.partitions.size
     assert(realnPartitions == nPartitions)
@@ -156,7 +159,7 @@ object ExecuteDistributedSimulation {
     nValid = validData.length
     nTest = testData.length
 
-
+    //trainingDataRDD.collect().map(println(_))
 
 
 
@@ -302,21 +305,28 @@ object ExecuteDistributedSimulation {
     }
 
 
+    //val rfparamsGlobal = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, globalMinNodeSize))
+
+
     //Dont runGlobalRF with with huge datasets
     if(runOracle){
       printlnd("Running Oracle")
+      printlnd(oracle)
       //println("Running silo oracle 2")
       val predictionsSiloOracle2 = DistributedForest.predictWithLocalRegressionBatch(
         testPredictors, forests, nPnnsPerPartition, batchSize, oracle)
       forests.unpersist()
       val oracleData = trainingDataRDD.map(x => FeatureImportance.getActiveFeatures(x, oracle))
       oracleData.persist()
-      val forestParametersOracle = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(Math.ceil(oracle.length/3).toInt, minNodeSize))
+      val forestParametersOracle = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(Math.ceil(oracle.length.toDouble/3).toInt, minNodeSize))
      // println("Running silo oracle 1")
       val forestsOracle1 = DistributedForest.train(oracleData, forestParametersOracle)
-      val rfparamsGlobalOracle = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(Math.ceil(oracle.length/3).toInt, globalMinNodeSize))
+      val rfparamsGlobalOracle = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(Math.ceil(oracle.length.toDouble/3).toInt, globalMinNodeSize))
       if(runGlobalRF){
         //println("Running Global oracle 1")
+
+        val trainingData = trainingDataRDD.collect.toIndexedSeq
+
         val globalRFOracle = RandomForest.train(oracleData.collect.toIndexedSeq, rfparamsGlobalOracle)
         val predictionsGlobalRFOracle = testPredictors.map(x => FeatureImportance.getActiveFeatures(x, oracle)).map(x => globalRFOracle.predict(x))
         globalOracleRMSE = EvaluationMetrics.rmse(predictionsGlobalRFOracle, testLabels)

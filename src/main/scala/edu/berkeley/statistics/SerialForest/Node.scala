@@ -153,7 +153,7 @@ object Node {
 
       // TODO(adam) deal with ties and using midpoint as split
       val (bestScore, bestSplit, bestVariable) =
-        (candidateVars.indices).view.foldLeft((0.0, 0.0, -1))(
+        (candidateVars.indices).view.foldLeft((currNodeScore, 0.0, -1))(
           (bestScoreInfo, index) => {
             bestScoreInfo match {
               case (bestScore, bestSplit, bestPredictorIndex) =>

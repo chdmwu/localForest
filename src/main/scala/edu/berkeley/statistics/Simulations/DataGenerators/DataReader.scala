@@ -16,7 +16,7 @@ object DataReader {
   def getData(sc: SparkContext, trainFile: String, nPartitions: Int, nTrain:Int, nValid: Int, nTest: Int, validFile:String = "", testFile:String = "", nActive: Int = 0, nInactive: Int = 0, nBasis:Int = 2500, normalizeLabel:Boolean , normalizeFeatures:Boolean, seed: Int = 333):
   (RDD[LabeledPoint], IndexedSeq[LabeledPoint],IndexedSeq[LabeledPoint]) =  {
     var d = -1;
-    val noisesd = 1.0
+    val noisesd = 3.0 //TODO fix hardcoding of noise
     //var (trainingDataRDD, validData, testData) = trainFile match {
     val (trainingDataRDD, validData, testData) = trainFile match {
       case "Friedman1" => {
@@ -30,7 +30,7 @@ object DataReader {
         val validData = dataGenerator.
           generateData(nValid, noisesd, scala.util.Random)
         val testData = dataGenerator.
-          generateData(nTest, noisesd, scala.util.Random)
+          generateData(nTest, 0.0, scala.util.Random)
         (trainingDataRDD, validData, testData)
       }
       case "Linear" => {
@@ -46,7 +46,7 @@ object DataReader {
         val validData = dataGenerator.
           generateData(nValid, noisesd, scala.util.Random)
         val testData = dataGenerator.
-          generateData(nTest, noisesd, scala.util.Random)
+          generateData(nTest, 0.0, scala.util.Random)
         (trainingDataRDD, validData, testData)
       }
       case "GaussianProcess" => {
@@ -62,7 +62,7 @@ object DataReader {
         val validData = dataGenerator.
           generateData(nValid, noisesd, scala.util.Random)
         val testData = dataGenerator.
-          generateData(nTest, noisesd, scala.util.Random)
+          generateData(nTest, 0.0, scala.util.Random)
         (trainingDataRDD, validData, testData)
       }
       case x => (testFile.length,validFile.length) match{

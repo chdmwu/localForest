@@ -18,7 +18,7 @@ object DataReader {
     var d = -1;
     val noisesd = 3.0 //TODO fix hardcoding of noise
     //var (trainingDataRDD, validData, testData) = trainFile match {
-    val (trainingDataRDD, validData, testData) = trainFile match {
+    var (trainingDataRDD, validData, testData) = trainFile match {
       case "Friedman1" => {
         d = 5 + nInactive
         val dataGenerator = Friedman1Generator(nInactive)
@@ -89,7 +89,7 @@ object DataReader {
       }
     }
    // val nTrain = trainingDataRDD.count()
-    /**
+
     val true_nTrain = trainingDataRDD.count
     val trMean = trainingDataRDD.map(point => point.label).sum/ true_nTrain
     val trVariance = trainingDataRDD.map(point => Math.pow(point.label - trMean, 2)).sum / true_nTrain
@@ -105,7 +105,7 @@ object DataReader {
       validData = validData.map(point => new LabeledPoint(point.label, scaler.transform(point.features)))
       testData = testData.map(point => new LabeledPoint(point.label, scaler.transform(point.features)))
     }
-  */
+
     (trainingDataRDD, validData, testData)
   }
   def createLabeledPoint(line: String) : LabeledPoint = {

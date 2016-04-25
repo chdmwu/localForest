@@ -229,6 +229,23 @@ object ExecuteDistributedSimulation {
       predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
     val naiveTestTime = (System.currentTimeMillis - testNaiveStart) * 1e-3
 
+    var siloActiveSetRMSE = -1.0
+    val runFeatureImportance2=true; //TODO get rid of this
+    if(runFeatureImportance2){
+      val featureImportanceSet = fit.getTopFeatures(bestActive)
+      val trainDataActiveSet = trainingDataRDD.map(x=>FeatureImportance.getActiveFeatures(x,featureImportanceSet))
+      val forestParametersFeatures = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(ceil(bestActive.toDouble / 3).toInt, minNodeSize))
+      val forestsFeatures = DistributedForest.train(trainDataActiveSet, forestParametersFeatures)
+
+      val testPredictorsActiveSet = testPredictors.map(x=>FeatureImportance.getActiveFeatures(x,featureImportanceSet))
+      val predictionsActiveSet2 = DistributedForest.predictWithLocalRegressionBatch(
+        testPredictorsActiveSet, forestsFeatures, nPnnsPerPartition, batchSize)
+      siloActiveSetRMSE = EvaluationMetrics.rmse(predictionsActiveSet2, testLabels)
+    }
+
+
+
+
     //println("Running Oracles/Global RF")
     //Run global RF and oracles
     var globalTrainTime = -1.0
@@ -417,8 +434,8 @@ object ExecuteDistributedSimulation {
       System.out.println("Top Feature Active Set: " + fit.getTopFeatures(bestActive))
     }
     def printRMSEs = {
-      println("SiloRMSE,FeatImpRMSE,NaiveRMSE,GlobalRMSE,GlobalOracle1RMSE,SiloOracle1RMSE,SiloOracle2RMSE,MeanRMSE,linearRMSE,lassoRMSE")
-      println(siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","+ globalOracleRMSE + ","+ siloOracle1RMSE + ","+ siloOracle2RMSE+ ","+ meanRMSE+ ","+ linearRMSE+ ","+ lassoRMSE)
+      println("SiloRMSE,FeatImpRMSE,NaiveRMSE,GlobalRMSE,GlobalOracle1RMSE,SiloOracle1RMSE,SiloOracle2RMSE,MeanRMSE,linearRMSE,lassoRMSE,siloActiveSetRMSE")
+      println(siloRMSE + "," + featImpSiloRMSE + "," + naiveRMSE + ","+ globalRMSE + ","+ globalOracleRMSE + ","+ siloOracle1RMSE + ","+ siloOracle2RMSE+ ","+ meanRMSE+ ","+ linearRMSE+ ","+ lassoRMSE+","+siloActiveSetRMSE)
     }
     def printRunTimes = {
       println("rfTrainTime,globalTrainTime,siloTestTime,featImpSiloTestTime,naiveTestTime,globalTestTime")

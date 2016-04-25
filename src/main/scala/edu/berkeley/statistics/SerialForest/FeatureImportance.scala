@@ -64,17 +64,17 @@ class FeatureImportance (nFeatures: Int) extends Serializable {
     criteria1.zip(criteria2).zipWithIndex.filter(x => (x._1._1 >= threshold1 || x._1._2 >= criteria2Threshold)).map(_._2)
   }
 
-  def getTopFeatures(nFeatures: Int = 5): IndexedSeq[Int] = {
-    val n = nFeatures > getSplitGains.length || nFeatures < 0 match{
-      case true =>  getSplitGains.length
-      case false => nFeatures
-    }
-    getSplitGains.zipWithIndex.sortWith(_._1 > _._1).take(n).map(_._2).sorted
-  }
+def getTopFeatures(nFeatures: Int): IndexedSeq[Int] = {
+val n = nFeatures > getSplitGains.length || nFeatures < 0 match{
+case true =>  getSplitGains.length
+case false => nFeatures
+}
+getSplitGains.zipWithIndex.sortWith(_._1 > _._1).take(n).map(_._2).sorted
+}
 
-  def getSortedFeatures: IndexedSeq[Int] = {
-    getSplitGains.zipWithIndex.sortWith(_._1 > _._1).map(_._2)
-  }
+def getSortedFeatures: IndexedSeq[Int] = {
+getSplitGains.zipWithIndex.sortWith(_._1 > _._1).map(_._2)
+}
 }
 
 object FeatureImportance {
@@ -84,12 +84,10 @@ object FeatureImportance {
       case _ => new LabeledPoint(point.label, Vectors.dense(activeSet.collect(point.features.toArray).toArray))
     }
   }
-  def getActiveFeatures(point: mllibVector, activeSet: IndexedSeq[Int]) : mllibVector = {
-    activeSet match {
-      case null => point
-      case _ => Vectors.dense(activeSet.collect(point.toArray).toArray)
-    }
+    def getActiveFeatures(point: mllibVector, activeSet: IndexedSeq[Int]) : mllibVector = {
+      activeSet match {
+        case null => point
+        case _ => Vectors.dense(activeSet.collect(point.toArray).toArray)
+      }
   }
-
-
 }

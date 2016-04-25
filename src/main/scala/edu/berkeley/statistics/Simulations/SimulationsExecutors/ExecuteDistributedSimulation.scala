@@ -194,40 +194,15 @@ object ExecuteDistributedSimulation {
     printlnd("Getting predictions")
     //get mean prediction
     val predictionsMean = testPredictors.map(x => trainingMean)
-    //printlnd("mean")
-    //printlnd(trainingMean)
-    //printlnd("truelabels")
-    //printlnd(testLabels)
-    //get SILO prediction
+
+
+    printlnd("Getting SILO predictions")
     val testLocRegStart = System.currentTimeMillis
     val predictionsLocalRegression = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, nPnnsPerPartition, batchSize)
     val siloTestTime = (System.currentTimeMillis - testLocRegStart) * 1e-3
 
-    /**def validateActiveSet() = {
-      var bestRMSE = -1.0
-      var bestActive = -1
-      var bestCorr = -1.0
-      var rmses = ListBuffer[Double]()
-      var bestPredictions = IndexedSeq(0.0)
-      for(nActive <- 1 to nFeatures){
-        val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
-          validPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(nActive))
-        val currRMSE = EvaluationMetrics.rmse(predictionsActiveSet, validLabels)
-        rmses += currRMSE
-        val currCorr = EvaluationMetrics.correlation(predictionsActiveSet, validLabels)
-        if(bestRMSE < 0 || currRMSE < bestRMSE){
-          bestRMSE = currRMSE
-          bestActive = nActive
-          bestCorr = currCorr
-          bestPredictions = predictionsActiveSet
-        }
-      }
-      printlnd("best rmse1:")
-      printlnd(bestRMSE)
-      printlnd(rmses)
-      (bestRMSE, bestCorr, bestActive, bestPredictions)
-    }*/
+
     def validateActiveSet() = {
       val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatchValidate(validPredictors, forests, nPnnsPerPartition, batchSize, fit)
       val rmses = predictionsActiveSet.map(predictions => EvaluationMetrics.rmse(predictions, validLabels))
@@ -242,11 +217,13 @@ object ExecuteDistributedSimulation {
     printlnd("Validating")
     val activeSetStart = System.currentTimeMillis
     val bestActive = validateActiveSet()
-    printlnd("Testing")
+    printlnd("Getting Feat Imp SILO predictions")
     val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(bestActive))
     val featImpSiloTestTime = (System.currentTimeMillis - activeSetStart) * 1e-3
     //get naive distributed RF prediction
+
+    printlnd("Getting Naive predictions")
     val testNaiveStart = System.currentTimeMillis
     val predictionsNaiveAveraging = DistributedForest.
       predictWithNaiveAverageBatch(testPredictors, forests, batchSize)
@@ -272,40 +249,29 @@ object ExecuteDistributedSimulation {
     var lassoRMSE = -1.0
     val numIterations = 300
     val stepSize = 0.01
+    val lambdas = List(.001,.01,.1,1.0,10.0)
+
     //val numIterations = 10000
     if(runLinear){
       printlnd("Running Linear Regression")
-      val algorithm = new LinearRegressionWithSGD()
-      algorithm.setIntercept(true)
-      algorithm.optimizer
-        .setNumIterations(numIterations)
-        .setStepSize(stepSize)
-      val linModel = algorithm.run(trainingDataRDD)
+      val linModel = LinearRegressionWithSGD.train(trainingDataRDD,numIterations,stepSize)
       val predictionsLinear = testPredictors.map { point =>  linModel.predict(point)}
       linearRMSE = EvaluationMetrics.rmse(predictionsLinear, testLabels)
-      val lassoModel = LassoWithSGD.train(trainingDataRDD, numIterations)
-      val predictionsLasso = testPredictors.map { point =>  lassoModel.predict(point)}
-      lassoRMSE = EvaluationMetrics.rmse(predictionsLasso, testLabels)
-    }
 
-    if(runLinear){
       printlnd("Running Lasso Regression")
-      val algorithm = new LassoWithSGD()
-      algorithm.setIntercept(true).setValidateData(true)
-      algorithm.optimizer
-        .setNumIterations(numIterations)
-        .setStepSize(stepSize)
-
-      val linModel = algorithm.run(trainingDataRDD)
-      val predictionsLinear = testPredictors.map { point =>  linModel.predict(point)}
-      linearRMSE = EvaluationMetrics.rmse(predictionsLinear, testLabels)
-      val lassoModel = LassoWithSGD.train(trainingDataRDD, numIterations)
-      val predictionsLasso = testPredictors.map { point =>  lassoModel.predict(point)}
+      //validation
+      val validRMSEs = lambdas.map(
+        lambda => {
+          val lassoModel = LassoWithSGD.train(trainingDataRDD,numIterations,stepSize,lambda)
+          val validPrediction =  validPredictors.map { point =>  lassoModel.predict(point)}
+          val validRMSE = EvaluationMetrics.rmse(predictionsLinear, testLabels)
+          validRMSE
+        })
+      val bestLambda = validRMSEs.zip(lambdas).minBy(_._1)._2
+      val lassoModel = LassoWithSGD.train(trainingDataRDD,numIterations,stepSize,bestLambda)
+      val predictionsLasso = testPredictors.map{ point =>  lassoModel.predict(point)}
       lassoRMSE = EvaluationMetrics.rmse(predictionsLasso, testLabels)
     }
-
-
-    //val rfparamsGlobal = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, globalMinNodeSize))
 
 
     //Dont runGlobalRF with with huge datasets
@@ -353,6 +319,7 @@ object ExecuteDistributedSimulation {
 
     }
     if(runMllib){
+      printlnd("Running MLLib")
       val treeStrategy = Strategy.defaultStrategy("Regression")
       treeStrategy.setMinInstancesPerNode(mllibMinNodeSize)
       treeStrategy.setMaxDepth(mllibMaxDepth)

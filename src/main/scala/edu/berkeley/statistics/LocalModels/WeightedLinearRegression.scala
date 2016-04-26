@@ -13,7 +13,7 @@ object WeightedLinearRegression {
 
     covMatrices(0).cols match {
       case 0 => DenseVector(0)
-      case _ => {
+      case ncols => {
         val totCovMatrix = covMatrices.foldLeft[DenseMatrix[Double]](
           DenseMatrix.zeros[Double](covMatrices(0).rows, covMatrices(0).cols))
         {(prevMat: DenseMatrix[Double], newMat: DenseMatrix[Double]) => prevMat + newMat}
@@ -21,7 +21,10 @@ object WeightedLinearRegression {
           DenseVector.zeros[Double](crossCovArrays(0).length))
         {(prevVec: DenseVector[Double], newVec: DenseVector[Double]) => prevVec + newVec}
 
-        totCovMatrix \ totCrossCovArrays
+        try {totCovMatrix \ totCrossCovArrays}
+        catch{
+          case e:  breeze.linalg.MatrixSingularException => (.00001 * DenseMatrix.eye[Double](ncols) + totCovMatrix) \ totCrossCovArrays
+        }
       }
     }
   }
@@ -30,7 +33,11 @@ object WeightedLinearRegression {
                  crossCovArray: DenseVector[Double]) : DenseVector[Double] = {
     covMatrix.cols match {
       case 0 => DenseVector(0)
-      case _ => covMatrix \ crossCovArray
+      case ncols =>
+        try {covMatrix \ crossCovArray}
+        catch{
+          case e:  breeze.linalg.MatrixSingularException => (.00001 * DenseMatrix.eye[Double](ncols) + covMatrix) \ crossCovArray
+        }
     }
 
   }

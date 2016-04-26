@@ -266,7 +266,7 @@ object ExecuteDistributedSimulation {
     var lassoRMSE = -1.0
     val numIterations = 300
     val stepSize = 0.01
-    val lambdas = List(.001,.01,.1,1.0,10.0)
+    val lambdas = List(.0001,.001,.01,.1,1.0,10.0,100.0,1000.0)
 
     //val numIterations = 10000
     if(runLinear){

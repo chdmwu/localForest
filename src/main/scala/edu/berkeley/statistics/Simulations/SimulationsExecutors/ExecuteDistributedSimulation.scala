@@ -116,7 +116,6 @@ object ExecuteDistributedSimulation {
     var nTrain = castInt(getArg(options, defaultArgs, 'nTrain))
     var nValid = castInt(getArg(options, defaultArgs, 'nValid))
     var nTest = castInt(getArg(options, defaultArgs, 'nTest))
-    val nPnnsPerPartition = castInt(getArg(options, defaultArgs, 'nPnnsPerPartition))
     val batchSize = castInt(getArg(options, defaultArgs, 'batchSize))
     val nActive = castInt(getArg(options, defaultArgs, 'nActive))
     val nInactive = castInt(getArg(options, defaultArgs, 'nInactive))
@@ -175,6 +174,10 @@ object ExecuteDistributedSimulation {
       case -1 => ceil(nFeatures.toDouble / 3).toInt
       case x => x
     })
+    val nPnnsPerPartition = castInt(getArg(options, defaultArgs, 'nPnnsPerPartition)) match {
+      case -1 => ceil(nTrain.toDouble / 10).toInt
+      case x => x
+    }
     //println(mtry)
     val forestParameters = RandomForestParameters(ntree, sampleWithReplacement, TreeParameters(mtry, minNodeSize))
 
@@ -420,6 +423,7 @@ object ExecuteDistributedSimulation {
       println(
       "trainFile Name: "+trainFile +
         " nPartitions: "+nPartitions +
+        " nPnnsPerPartition " + nPnnsPerPartition +
         " nTrain: "+nTrain +
         " nValid: "+nValid +
         " nTest: "+nTest +

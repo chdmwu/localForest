@@ -97,7 +97,7 @@ object ExecuteDistributedSimulation {
       }
     }
     def getArg(args: Map[Symbol, Any], defaultArgs: Map[Symbol, Any], name: Symbol) : Any = args(name) match {
-      case -1 => defaultArgs(name)
+      case "not set" => defaultArgs(name)
       case _ => args(name)
     }
 
@@ -105,7 +105,7 @@ object ExecuteDistributedSimulation {
       'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'globalMinNodeSize -> 10, 'sampleWithReplacement -> 1
       , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000, 'normalizeLabel -> 1, 'normalizeFeatures -> 1, 'runLinear -> -1, 'debug -> -1,
     'runMllib -> -1, 'mllibMaxDepth -> 10,'mllibBins -> 32,'mllibMinNodeSize -> 10).withDefaultValue(-1);
-    val options = nextOption(Map().withDefaultValue(-1),arglist)
+    val options = nextOption(Map().withDefaultValue("not set"),arglist)
 
     //set parameters
     //println("Setting parameters")
@@ -422,6 +422,7 @@ object ExecuteDistributedSimulation {
     def printImportant = {
       println(
       "trainFile Name: "+trainFile +
+        " ntree: "+ntree +
         " nPartitions: "+nPartitions +
         " nPnnsPerPartition " + nPnnsPerPartition +
         " nTrain: "+nTrain +

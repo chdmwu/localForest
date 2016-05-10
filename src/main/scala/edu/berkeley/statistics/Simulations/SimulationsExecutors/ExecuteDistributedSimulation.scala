@@ -437,6 +437,8 @@ object ExecuteDistributedSimulation {
         " Number of Features Selected: " + bestActive
       )
       System.out.println("Top Feature Active Set: " + fit.getTopFeatures(bestActive))
+      System.out.println("Sorted Features: " + fit.getSortedFeatures)
+      System.out.println("Sorted Gains: " + fit.getSortedGains)
     }
     def printRMSEs = {
       println("SiloRMSE,FeatImpRMSE,NaiveRMSE,GlobalRMSE,GlobalOracle1RMSE,SiloOracle1RMSE,SiloOracle2RMSE,MeanRMSE,linearRMSE,lassoRMSE,siloActiveSetRMSE")

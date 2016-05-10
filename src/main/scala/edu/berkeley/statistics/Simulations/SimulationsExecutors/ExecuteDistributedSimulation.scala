@@ -101,7 +101,7 @@ object ExecuteDistributedSimulation {
       case _ => args(name)
     }
 
-    val defaultArgs = Map('trainFile -> "Friedman1",'validFile -> "",'testFile -> "", 'nPartitions ->4, 'nTrain ->2500, 'nPnnsPerPartition ->1000,
+    val defaultArgs = Map('trainFile -> "Friedman1",'validFile -> "",'testFile -> "", 'nPartitions ->4, 'nTrain ->2500, 'nPnnsPerPartition -> -1, 'mtry -> -1,
       'nTest ->1000,'batchSize -> 100,'nActive ->5,'nInactive ->0, 'nBasis -> 2500, 'ntree -> 100, 'minNodeSize -> 10, 'globalMinNodeSize -> 10, 'sampleWithReplacement -> 1
       , 'runOracle -> -1, 'threshold1 -> .1, 'threshold2 -> .33, 'nValid -> 1000, 'normalizeLabel -> 1, 'normalizeFeatures -> 1, 'runLinear -> -1, 'debug -> -1,
     'runMllib -> -1, 'mllibMaxDepth -> 10,'mllibBins -> 32,'mllibMinNodeSize -> 10).withDefaultValue(-1);
@@ -233,7 +233,7 @@ object ExecuteDistributedSimulation {
     val naiveTestTime = (System.currentTimeMillis - testNaiveStart) * 1e-3
 
     var siloActiveSetRMSE = -1.0
-    val runFeatureImportance2=true; //TODO get rid of this
+    val runFeatureImportance2=false; //TODO get rid of this
     if(runFeatureImportance2){
       val featureImportanceSet = fit.getTopFeatures(bestActive)
       val trainDataActiveSet = trainingDataRDD.map(x=>FeatureImportance.getActiveFeatures(x,featureImportanceSet))

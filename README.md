@@ -10,6 +10,13 @@ import edu.berkeley.statistics.DistributedForest.DistributedForest
 import edu.berkeley.statistics.SerialForest.{RandomForestParameters, TreeParameters}
 import org.apache.spark.{SparkConf, SparkContext}
 
+// Set random forest parameters
+val forestParameters = RandomForestParameters(100,       // Number of trees
+                                              true,      // Resample with replacement?
+                                              TreeParameters(
+                                                3,       // mtry
+                                                10))     // max number of training points in leaf node
+
 // trainingDataRDD is a RDD[LabeledPoint]
 val forests = DistributedForest.train(trainingDataRDD, forestParameters)
 

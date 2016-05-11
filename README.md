@@ -1,4 +1,4 @@
-#SILO: SupervIsed LOcal modeling method for distributing random forests
+#SILO: Supervised Local modeling method for distributing random forests
 This code implements the method introduced in
 Bloniarz, A., Wu, C., Yu, B., & Talwalkar, A. (2016). Supervised Neighborhoods for Distributed Nonparametric Regression. In *Proceedings of the 19th International Conference on Artificial Intelligence and Statistics* (pp. 1450-1459). [link](http://www.jmlr.org/proceedings/papers/v51/bloniarz16.pdf)
 

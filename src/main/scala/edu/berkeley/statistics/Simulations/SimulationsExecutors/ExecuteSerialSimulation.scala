@@ -3,7 +3,6 @@ package edu.berkeley.statistics.Simulations.SimulationsExecutors
 import edu.berkeley.statistics.SerialForest.{RandomForest, RandomForestParameters, Tree, TreeParameters}
 import edu.berkeley.statistics.Simulations.DataGenerators.{FourierBasisGaussianProcessGenerator, FourierBasisGaussianProcessFunction, Friedman1Generator}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
-import edu.berkeley.statistics.SerialForest.Node
 import scala.math.floor
 
 object ExecuteSerialSimulation {

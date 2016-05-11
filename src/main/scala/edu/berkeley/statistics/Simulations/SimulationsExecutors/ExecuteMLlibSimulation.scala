@@ -1,6 +1,5 @@
 package edu.berkeley.statistics.Simulations.SimulationsExecutors
 
-import edu.berkeley.statistics.DistributedForest.DistributedForest
 import edu.berkeley.statistics.SerialForest.{RandomForestParameters, TreeParameters}
 import edu.berkeley.statistics.Simulations.DataGenerators.{FourierBasisGaussianProcessFunction, FourierBasisGaussianProcessGenerator, Friedman1Generator}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics

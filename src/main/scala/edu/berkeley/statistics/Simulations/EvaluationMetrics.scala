@@ -10,7 +10,7 @@ object EvaluationMetrics {
             signal1.length + " and " + signal2.length)
     }
   }
-  
+
   def correlation(signal1: IndexedSeq[Double], signal2: IndexedSeq[Double]): Double = {
     checkLengths(signal1, signal2)
 

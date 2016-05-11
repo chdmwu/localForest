@@ -1,9 +1,7 @@
 package edu.berkeley.statistics.Simulations
 
 import scala.math._
-/**
- * Created by Adam on 9/11/15.
- */
+
 object EvaluationMetrics {
   private def checkLengths(signal1: Seq[Double], signal2: Seq[Double]): Unit = {
     if (signal1.length != signal2.length) {
@@ -12,6 +10,7 @@ object EvaluationMetrics {
             signal1.length + " and " + signal2.length)
     }
   }
+  
   def correlation(signal1: IndexedSeq[Double], signal2: IndexedSeq[Double]): Double = {
     checkLengths(signal1, signal2)
 

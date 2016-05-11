@@ -5,7 +5,8 @@ import org.apache.spark.mllib.regression.LabeledPoint
 
 class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) extends Serializable {
 
-  private def getTopPNNIndicesAndWeights(testPoint: mllibVector, numPNNs: Int): IndexedSeq[(Int, Double)] = {
+  private def getTopPNNIndicesAndWeights(testPoint: mllibVector,
+                                         numPNNs: Int): IndexedSeq[(Int, Double)] = {
     val indexCounts = scala.collection.mutable.OpenHashMap.empty[Int, Double]
 
     trees.map(tree => {
@@ -24,12 +25,14 @@ class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) ex
     }
   }
 
-  def getTopPNNsAndWeights(testPoint: mllibVector, numPNNs: Int): IndexedSeq[(LabeledPoint, Double)] = {
+  def getTopPNNsAndWeights(testPoint: mllibVector,
+                           numPNNs: Int): IndexedSeq[(LabeledPoint, Double)] = {
     this.getTopPNNIndicesAndWeights(testPoint, numPNNs).map{
       case (index: Int, weight: Double) => (trainingData(index), weight)}
   }
 
-  def getTopPNNsAndWeightsBatch(testPoints: IndexedSeq[mllibVector], numPNNs: Int): List[IndexedSeq[(LabeledPoint, Double)]] = {
+  def getTopPNNsAndWeightsBatch(testPoints: IndexedSeq[mllibVector],
+                                numPNNs: Int): List[IndexedSeq[(LabeledPoint, Double)]] = {
     testPoints.map(getTopPNNsAndWeights(_, numPNNs)).toList
   }
 
@@ -46,16 +49,6 @@ object RandomForest {
     } else {
       RandomSampling.sampleWithoutReplacement
     }
-
-  def parTrain(trainingData: IndexedSeq[LabeledPoint],
-               parameters: RandomForestParameters): RandomForest = {
-    val samplingFn = getSamplingFn(parameters)
-    new RandomForest(List.fill(parameters.ntree)(scala.util.Random.nextLong).par.map(
-      seed => Tree.train(
-        samplingFn(trainingData.length, trainingData.length,
-          new scala.util.Random(seed)),
-        trainingData, parameters.treeParams, seed)).seq, trainingData)
-  }
 
   def train(trainingData: IndexedSeq[LabeledPoint],
             parameters: RandomForestParameters): RandomForest = {

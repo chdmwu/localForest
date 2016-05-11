@@ -55,7 +55,6 @@ object Node {
 
       def makeLeafOrSplitRandomly: Node  = {
         if (rowsHere.size > treeParameters.nodeSize) {
-          // A hack
           // Pick a random variable
           val splitVar = candidateVars(0)
           val predictorValues: IndexedSeq[Double] =
@@ -90,28 +89,21 @@ object Node {
       val scoreKeeper: AnovaScoreKeeper = new AnovaScoreKeeper(yValsAtNode)
 
       // Function to get score and split point for a feature
-      // TODO(adam): convert to using some and none for non-feasible variables?
       def getScoreAndSplitPoint(featureIndex: Int): (Double, Double) = {
 
         // Copy out the values of the column in this node
         val predictorValues = rowsHere.map(trainingData(_).features(featureIndex))
+
         // Get the indices of the sorted set of predictors
-        // val predictorIndices = predictorValues.indices.sortBy(predictorValues(_))
-
-
         val predictorIndices = predictorValues.indices.toArray
         util.Sorting.quickSort[Int](predictorIndices)(
           Ordering.by[Int, Double](predictorValues(_)))
-
-        //        java.util.Arrays.sort(predictorIndices map java.lang.Integer.valueOf,
-        //          Ordering.by[java.lang.Integer, Double](predictorValues(_)))
 
         var minScore: Double = 0.0
 
         // Reset the score keeper
         scoreKeeper.reset()
 
-        // TODO(adam) deal with ties
         var bestScore: Double = 0
         var bestSplit: Double = 0
         var foundPredictorVariation: Boolean = false
@@ -120,7 +112,6 @@ object Node {
         scoreKeeper.moveLeft(yValsAtNode(predictorIndices.head))
         bestScore = scoreKeeper.getCurrentScore()
         var lastPredictorValue: Double = predictorValues(predictorIndices.head)
-
 
         predictorIndices.tail.foreach(index => {
           scoreKeeper.moveLeft(yValsAtNode(index))
@@ -144,11 +135,8 @@ object Node {
         }
       }
 
-
       val scoresAndSplits = candidateVars.map(getScoreAndSplitPoint(_))
 
-
-      // TODO(adam) deal with ties and using midpoint as split
       val (bestScore, bestSplit, bestVariable) =
         (candidateVars.indices).view.foldLeft((0.0, 0.0, -1))(
           (bestScoreInfo, index) => {
@@ -164,7 +152,7 @@ object Node {
         )
 
       // No viable split is found, so make a leaf
-      if (bestScore == 0.0) {
+      if ((bestScore == 0.0) || (bestVariable == -1)) {
         return makeLeafOrSplitRandomly
       }
 

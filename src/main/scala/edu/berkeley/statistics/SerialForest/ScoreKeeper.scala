@@ -2,9 +2,6 @@ package edu.berkeley.statistics.SerialForest
 
 import scala.math.pow
 
-/**
- * Created by Adam on 9/8/15.
- */
 abstract class ScoreKeeper {
   def moveLeft(yVal: Double)
   def getCurrentScore(): Double

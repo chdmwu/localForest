@@ -20,9 +20,21 @@ val forestParameters = RandomForestParameters(100,                    // Number 
 // assumes trainingDataRDD is a RDD[LabeledPoint]
 val forests = DistributedForest.train(trainingDataRDD, forestParameters)
 
-// Make predictions at test points
-// assumes testData is an IndexedSeq[Array[Double]]
-val predictions = testData.map(forest.predict(_))
+// persist the trained forests in memory
+forests.persist()
+
+// set batch size for processing test points
+val batchSize = 100
+
+// set parameter to limit the size of supervised neighborhoods
+// set to a large value to use the entire neighborhood (recommended)
+val numPNNsPerPartition = 100000  
+
+// Make predictions at test points with local regression
+// assumes testData is an IndexedSeq[Vector]
+val predictions = DistributedForest.predictWithLocalRegressionBatch(
+      testData, forests, numPNNsPerPartition, batchSize)
+
 ```
 
 

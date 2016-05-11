@@ -8,7 +8,6 @@ To compile and assemble jar, run `sbt assembly`. The jar file will be output to 
 ```scala
 import edu.berkeley.statistics.DistributedForest.DistributedForest
 import edu.berkeley.statistics.SerialForest.{RandomForestParameters, TreeParameters}
-import org.apache.spark.{SparkConf, SparkContext}
 
 // Set random forest parameters
 val forestParameters = RandomForestParameters(100,                    // Number of trees

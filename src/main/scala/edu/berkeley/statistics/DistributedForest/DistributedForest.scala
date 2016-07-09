@@ -1,23 +1,7 @@
-/**
- * Copyright 2015 Adam Bloniarz, Christopher Wu, Ameet Talwalkar
- * 
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * 
- *     http://www.apache.org/licenses/LICENSE-2.0
- * 
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package edu.berkeley.statistics.DistributedForest
 
 import breeze.linalg.{DenseMatrix, DenseVector}
 import edu.berkeley.statistics.LocalModels.WeightedLinearRegression
-<<<<<<< HEAD
 import edu.berkeley.statistics.SerialForest.{FeatureImportance, RandomForest, RandomForestParameters}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
 
@@ -29,18 +13,16 @@ import org.apache.spark.{SparkConf, SparkContext}
 import scala.collection.immutable
 import scala.collection.mutable.ListBuffer
 
-=======
-import edu.berkeley.statistics.SerialForest.{RandomForest, RandomForestParameters}
-import org.apache.spark.mllib.linalg.{Vector => mllibVector}
-import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.rdd.RDD
->>>>>>> bc2bb7146d667426f58aaba8f691ff2a0e210caa
 
+/**
+ * Creates a distributed localforest.
+ *
+ * Reads headerless csvs for training and testing data, assumes the last column is the response variable.
+ */
 object DistributedForest {
   /**
   val nPartitions = 5
   val numIterations = 100
-<<<<<<< HEAD
 
   def main(args: Array[String]) = {
     var trainFile = "/home/christopher/train.csv"
@@ -71,9 +53,6 @@ object DistributedForest {
   // TODO(adam): consider making this RDD[IndexedSeq[LabeledPoint]]
   // TODO(adam): make it so you can specify size of resample
   // TODO(adam): make RF parameters tunable
-=======
-
->>>>>>> bc2bb7146d667426f58aaba8f691ff2a0e210caa
   def train(trainData: RDD[LabeledPoint],
             parameters: RandomForestParameters): RDD[RandomForest] = {
     trainData.mapPartitions[RandomForest](x => Iterator(RandomForest.train(x.toIndexedSeq,
@@ -131,27 +110,22 @@ object DistributedForest {
           WeightedLinearRegression.getBetaHat(partitionCovMats, partitionCrossCovs)
         betaHat(-1)
       })
-
       // Fill the predictions
-<<<<<<< HEAD
       // Ugh
       val endIndex = Math.min(totalPoints, currentIndex+batchSize)
       (currentIndex until (endIndex)).foreach(i => {
-=======
-      (currentIndex until (currentIndex + batchSize)).foreach(i => {
->>>>>>> bc2bb7146d667426f58aaba8f691ff2a0e210caa
         predictions(i) = predictionsBatch(i - currentIndex)
       })
       batchIndex += 1
       currentIndex += batchSize
     }
 
+    // Is this terrible?
     predictions
   }
 
   def predictWithNaiveAverageBatch(testData: IndexedSeq[mllibVector],
-                                   forests: RDD[RandomForest], batchSize: Int):
-  IndexedSeq[Double] = {
+                                       forests: RDD[RandomForest], batchSize: Int): IndexedSeq[Double] = {
     var batchData = testData.grouped(batchSize).toIndexedSeq
     val predictions = Array.fill(testData.size)(0.0)
     var batchIndex = 0

@@ -1,3 +1,18 @@
+/**
+ * Copyright 2015 Adam Bloniarz, Christopher Wu, Ameet Talwalkar
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package edu.berkeley.statistics.SerialForest
 
 import org.apache.spark.mllib.linalg.{Vector => mllibVector, Vectors}
@@ -5,7 +20,8 @@ import org.apache.spark.mllib.regression.LabeledPoint
 
 class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) extends Serializable {
 
-  private def getTopPNNIndicesAndWeights(testPoint: mllibVector, numPNNs: Int): IndexedSeq[(Int, Double)] = {
+  private def getTopPNNIndicesAndWeights(testPoint: mllibVector,
+                                         numPNNs: Int): IndexedSeq[(Int, Double)] = {
     val indexCounts = scala.collection.mutable.OpenHashMap.empty[Int, Double]
 
     trees.map(tree => {
@@ -24,14 +40,24 @@ class RandomForest (trees: Seq[Tree], trainingData: IndexedSeq[LabeledPoint]) ex
     }
   }
 
+<<<<<<< HEAD
   def getTopPNNsAndWeights(testPoint: mllibVector, numPNNs: Int, activeSet: IndexedSeq[Int] = null): IndexedSeq[(LabeledPoint, Double)] = {
+=======
+  def getTopPNNsAndWeights(testPoint: mllibVector,
+                           numPNNs: Int): IndexedSeq[(LabeledPoint, Double)] = {
+>>>>>>> bc2bb7146d667426f58aaba8f691ff2a0e210caa
     this.getTopPNNIndicesAndWeights(testPoint, numPNNs).map{
       case (index: Int, weight: Double) => (FeatureImportance.getActiveFeatures(trainingData(index), activeSet), weight)}
   }
 
+<<<<<<< HEAD
 
 
   def getTopPNNsAndWeightsBatch(testPoints: IndexedSeq[mllibVector], numPNNs: Int): List[IndexedSeq[(LabeledPoint, Double)]] = {
+=======
+  def getTopPNNsAndWeightsBatch(testPoints: IndexedSeq[mllibVector],
+                                numPNNs: Int): List[IndexedSeq[(LabeledPoint, Double)]] = {
+>>>>>>> bc2bb7146d667426f58aaba8f691ff2a0e210caa
     testPoints.map(getTopPNNsAndWeights(_, numPNNs)).toList
   }
 
@@ -52,16 +78,6 @@ object RandomForest {
     } else {
       RandomSampling.sampleWithoutReplacement
     }
-
-  def parTrain(trainingData: IndexedSeq[LabeledPoint],
-               parameters: RandomForestParameters): RandomForest = {
-    val samplingFn = getSamplingFn(parameters)
-    new RandomForest(List.fill(parameters.ntree)(scala.util.Random.nextLong).par.map(
-      seed => Tree.train(
-        samplingFn(trainingData.length, trainingData.length,
-          new scala.util.Random(seed)),
-        trainingData, parameters.treeParams, seed)).seq, trainingData)
-  }
 
   def train(trainingData: IndexedSeq[LabeledPoint],
             parameters: RandomForestParameters): RandomForest = {

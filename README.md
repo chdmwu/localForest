@@ -1,11 +1,3 @@
-<<<<<<< HEAD
-import edu.berkeley.statistics.SerialForest.{FeatureImportance, RandomForestParameters, TreeParameters, RandomForest}
-
-
-val bestFeatures = DistributedForest.validateActiveSet(validPredictors, validLabels, forests, nPnnsPerPartition, batchSize, fit)
-val predictions = DistributedForest.predictWithLocalRegressionBatch(
-      testPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(bestFeatures))
-=======
 #SILO: Supervised Local modeling method for distributing random forests
 This code implements the method introduced in
 
@@ -44,6 +36,5 @@ val predictions = DistributedForest.predictWithLocalRegressionBatch(
       testData, forests, numPNNsPerPartition, batchSize)
 
 ```
->>>>>>> bc2bb7146d667426f58aaba8f691ff2a0e210caa
 
 

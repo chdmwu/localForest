@@ -4,9 +4,10 @@ import edu.berkeley.statistics.DistributedForest.DistributedForest
 import edu.berkeley.statistics.SerialForest.{FeatureImportance, RandomForestParameters, TreeParameters, RandomForest}
 import edu.berkeley.statistics.Simulations.DataGenerators.{DataReader, FourierBasisGaussianProcessFunction, FourierBasisGaussianProcessGenerator, Friedman1Generator}
 import edu.berkeley.statistics.Simulations.EvaluationMetrics
-import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.mllib.regression.{LassoWithSGD, LinearRegressionWithSGD, LabeledPoint}
 import org.apache.spark.mllib.tree.configuration.Strategy
+import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row}
 import scala.collection.mutable.ListBuffer
@@ -219,8 +220,9 @@ object ExecuteDistributedSimulation {
     //get active set SILO prediction
     printlnd("Validating")
     val activeSetStart = System.currentTimeMillis
-    val bestActive = validateActiveSet()
-    printlnd("Getting Feat Imp SILO predictions")
+    //val bestActive = validateActiveSet()
+    val bestActive =   DistributedForest.validateActiveSet(validData, forests, nPnnsPerPartition, batchSize, fit)
+      printlnd("Getting Feat Imp SILO predictions")
     val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatch(
       testPredictors, forests, nPnnsPerPartition, batchSize, fit.getTopFeatures(bestActive))
     val featImpSiloTestTime = (System.currentTimeMillis - activeSetStart) * 1e-3

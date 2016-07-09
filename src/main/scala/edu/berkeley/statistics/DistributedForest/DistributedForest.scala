@@ -3,6 +3,7 @@ package edu.berkeley.statistics.DistributedForest
 import breeze.linalg.{DenseMatrix, DenseVector}
 import edu.berkeley.statistics.LocalModels.WeightedLinearRegression
 import edu.berkeley.statistics.SerialForest.{FeatureImportance, RandomForest, RandomForestParameters}
+import edu.berkeley.statistics.Simulations.EvaluationMetrics
 
 import org.apache.spark.mllib.linalg.{Vector => mllibVector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
@@ -223,5 +224,15 @@ object DistributedForest {
 
     // Is this terrible?
     predictions.toIndexedSeq.transpose
+  }
+
+  def validateActiveSet(validData: IndexedSeq[LabeledPoint], forests: RDD[RandomForest], nPnnsPerPartition: Int, batchSize: Int, fit: FeatureImportance) : Int = {
+    val validPredictors = validData.map(x => x.features)
+    val validLabels = validData.map(x => x.label)
+    val nFeatures = validPredictors(0).size
+    val predictionsActiveSet = DistributedForest.predictWithLocalRegressionBatchValidate(validPredictors, forests, nPnnsPerPartition, batchSize, fit)
+    val rmses = predictionsActiveSet.map(predictions => EvaluationMetrics.rmse(predictions, validLabels))
+    val bestActive = rmses.zip(1 to nFeatures).minBy(_._1)._2
+    bestActive
   }
 }

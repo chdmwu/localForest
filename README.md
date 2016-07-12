@@ -18,7 +18,8 @@ val forestParameters = RandomForestParameters(100,                    // Number 
 
 // Train the models
 // assumes trainingDataRDD is a RDD[LabeledPoint]
-// IMPORTANT: Each partition of trainingDataRDD will be trained on in parallel. To train a vanilla random forest, ensure your RDD only has 1 partition.
+// IMPORTANT: Each partition of trainingDataRDD will have a separate random forest trained on it (data parallelism). 
+//To train a vanilla random forest on your entire dataset, ensure your RDD only has 1 partition.
 val forests = DistributedForest.train(trainingDataRDD, forestParameters)
 
 // persist the trained forests in memory
